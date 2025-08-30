@@ -28,7 +28,7 @@ class UzayManga : ParsedHttpSource() {
 
     override val baseUrl = "https://uzaymanga.com"
 
-    override val cdnUrl = "https://manga2.efsaneler.can.re/"
+    val cdnUrl = "https://manga2.efsaneler.can.re/"
 
     override val lang = "tr"
 
