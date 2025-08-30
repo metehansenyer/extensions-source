@@ -28,7 +28,7 @@ class UzayManga : ParsedHttpSource() {
 
     override val baseUrl = "https://uzaymanga.com"
 
-    val cdnUrl = "https://manga2.efsaneler.can.re/"
+    val cdnUrl = "https://manga2.efsaneler.can.re"
 
     override val lang = "tr"
 
@@ -141,7 +141,7 @@ class UzayManga : ParsedHttpSource() {
 
         return pageRegex.findAll(script).mapIndexed { index, result ->
             val url = result.groups.get(1)!!.value
-            Page(index, document.location(), "$cdnUrl/series/$url")
+            Page(index, document.location(), "$cdnUrl/$url")
         }.toList()
     }
 
