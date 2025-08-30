@@ -3,7 +3,7 @@ ext {
     extClass = '.WebtoonTR'
     themePkg = 'madara'
     baseUrl = 'https://webtoontr.net'
-    overrideVersionCode = 2
+    overrideVersionCode = 0
     isNsfw = true
 }
 

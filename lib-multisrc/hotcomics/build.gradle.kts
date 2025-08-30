@@ -2,7 +2,7 @@ plugins {
     id("lib-multisrc")
 }
 
-baseVersionCode = 2
+baseVersionCode = 1
 
 dependencies {
     api(project(":lib:cookieinterceptor"))

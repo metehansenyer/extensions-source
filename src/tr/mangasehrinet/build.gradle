@@ -3,7 +3,7 @@ ext {
     extClass = '.MangaSehriNet'
     themePkg = 'madara'
     baseUrl = 'https://manga-sehri.net'
-    overrideVersionCode = 1
+    overrideVersionCode = 0
     isNsfw = true
 }
 

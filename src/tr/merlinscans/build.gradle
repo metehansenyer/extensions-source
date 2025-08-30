@@ -3,7 +3,7 @@ ext {
     extClass = '.MerlinScans'
     themePkg = 'mangathemesia'
     baseUrl = 'https://merlinscans.com'
-    overrideVersionCode = 1
+    overrideVersionCode = 0
     isNsfw = false
 }
 

@@ -3,7 +3,7 @@ ext {
     extClass = '.WebtoonHatti'
     themePkg = 'madara'
     baseUrl = 'https://webtoonhatti.club'
-    overrideVersionCode = 7
+    overrideVersionCode = 0
     isNsfw = false
 }
 

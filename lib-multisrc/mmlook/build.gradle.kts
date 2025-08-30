@@ -2,7 +2,7 @@ plugins {
     id("lib-multisrc")
 }
 
-baseVersionCode = 2
+baseVersionCode = 1
 
 dependencies {
     implementation(project(":lib:unpacker"))

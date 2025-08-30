@@ -3,7 +3,7 @@ ext {
     extClass = '.TurkceMangaOku'
     themePkg = 'madara'
     baseUrl = 'https://trmangaoku.com'
-    overrideVersionCode = 1
+    overrideVersionCode = 0
     isNsfw = false
 }
 

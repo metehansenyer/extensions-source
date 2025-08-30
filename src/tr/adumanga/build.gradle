@@ -3,7 +3,7 @@ ext {
     extClass = '.AduManga'
     themePkg = 'mangathemesia'
     baseUrl = 'https://adumanga.com'
-    overrideVersionCode = 1
+    overrideVersionCode = 0
 }
 
 apply from: "$rootDir/common.gradle"

@@ -3,7 +3,7 @@ ext {
     extClass = '.TempestScans'
     themePkg = 'mangathemesia'
     baseUrl = 'https://tempestmangas.com'
-    overrideVersionCode = 1
+    overrideVersionCode = 0
     isNsfw = false
 }
 

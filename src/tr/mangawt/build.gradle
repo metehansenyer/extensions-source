@@ -3,7 +3,7 @@ ext {
     extClass = '.MangaWT'
     themePkg = 'madara'
     baseUrl = 'https://mangawt.com'
-    overrideVersionCode = 3
+    overrideVersionCode = 0
     isNsfw = false
 }
 
