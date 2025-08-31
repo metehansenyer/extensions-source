@@ -1,9 +1,9 @@
 package eu.kanade.tachiyomi.extension.tr.uzaymanga
 
-import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.lib.randomua.getPrefCustomUA
 import eu.kanade.tachiyomi.lib.randomua.getPrefUAType
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -11,8 +11,11 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.ParsedHttpSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import java.text.ParseException
+import java.text.SimpleDateFormat
+import java.util.Locale
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -23,9 +26,6 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import rx.Observable
 import uy.kohesive.injekt.injectLazy
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 class UzayManga : HttpSource() {
     override val name = "Uzay Manga"
@@ -65,12 +65,10 @@ class UzayManga : HttpSource() {
     override fun popularMangaFromElement(element: Element) = SManga.create().apply {
         val linkElement = element.selectFirst("a")
             ?: throw Exception("Link element not found")
-        
         title = element.selectFirst("h2")?.text()?.trim()?.takeIf { it.isNotBlank() }
             ?: throw Exception("Manga title not found")
         
         thumbnail_url = element.selectFirst("img")?.absUrl("src")?.takeIf { it.isNotBlank() }
-        
         val href = linkElement.absUrl("href").takeIf { it.isNotBlank() }
             ?: throw Exception("Manga URL not found")
         setUrlWithoutDomain(href)
@@ -142,7 +140,7 @@ class UzayManga : HttpSource() {
             try {
                 val responseBody = response.body.string()
                 if (responseBody.isBlank()) return MangasPage(emptyList(), false)
-                
+
                 val dto = json.decodeFromString<List<SearchDto>>(responseBody)
                 val mangas = dto.mapNotNull { searchItem ->
                     try {
@@ -186,28 +184,28 @@ class UzayManga : HttpSource() {
 
     override fun mangaDetailsParse(document: Document) = SManga.create().apply {
         val contentElement = document.selectFirst("#content") ?: document.body()
-        
+
         title = contentElement.selectFirst("h1")?.text()?.trim()?.takeIf { it.isNotBlank() }
             ?: throw Exception("Manga title not found")
         
         // Daha güvenilir thumbnail seçici
         thumbnail_url = contentElement.selectFirst("img[src*='thumbnail']")?.absUrl("src")?.takeIf { it.isNotBlank() }
             ?: contentElement.selectFirst("img")?.absUrl("src")?.takeIf { it.isNotBlank() }
-        
+
         // Genre'leri daha güvenli şekilde parse et
         val genreElements = contentElement.select("a[href*='categories'], .p-1\\.5, a[href*='search\\?categories']")
         genre = genreElements.eachText().filter { it.isNotBlank() }.joinToString(", ")
-        
+
         // Description'ı farklı selector'larla dene
         description = contentElement.selectFirst(".summary p, .text-sm.xl\\:text-lg p, div.grid h2 + p, .whitespace-pre-wrap p")
             ?.text()?.trim()?.takeIf { it.isNotBlank() }
-        
+
         // Status parsing'i iyileştir
-        val statusElement = contentElement.select("div.flex.justify-between").find { 
-            it.selectFirst("span")?.text()?.contains("Durum", ignoreCase = true) == true 
+        val statusElement = contentElement.select("div.flex.justify-between").find {
+            it.selectFirst("span")?.text()?.contains("Durum", ignoreCase = true) == true
         }
         val statusText = statusElement?.selectFirst("span:last-child")?.text() ?: ""
-        
+
         status = when {
             statusText.contains("Devam Ediyor", ignoreCase = true) -> SManga.ONGOING
             statusText.contains("Tamamlandi", ignoreCase = true) -> SManga.COMPLETED
@@ -215,7 +213,7 @@ class UzayManga : HttpSource() {
             statusText.contains("Bırakıldı", ignoreCase = true) -> SManga.CANCELLED
             else -> SManga.UNKNOWN
         }
-        
+
         // Author bilgisini ekle
         author = contentElement.select("div.flex.justify-between").find {
             it.selectFirst("span")?.text()?.contains("Tarafından", ignoreCase = true) == true
@@ -231,7 +229,7 @@ class UzayManga : HttpSource() {
         name = element.selectFirst("h3, .chapternum, b")?.text()?.trim()?.takeIf { it.isNotBlank() }
             ?: element.text().substringBefore("20").trim().takeIf { it.isNotBlank() }
             ?: "Bölüm"
-        
+
         // Date parsing iyileştirmesi
         date_upload = element.selectFirst("span.text-slate-400, .text-slate-400, span")
             ?.text()?.toDate() ?: 0L
@@ -274,7 +272,7 @@ class UzayManga : HttpSource() {
                 .replace("Kasım", "Nov")
                 .replace("Aralık", "Dec")
                 .replace(",", "")
-            
+
             dateFormat.parse(normalizedDate)?.time ?: 0L
         } catch (e: ParseException) {
             0L
@@ -284,7 +282,7 @@ class UzayManga : HttpSource() {
     private fun String.contains(vararg fragment: String): Boolean =
         fragment.any { trim().contains(it, ignoreCase = true) }
 
-    private fun String.toSlug(): String = 
+    private fun String.toSlug(): String =
         this.lowercase().trim()
             .replace(" ", "-")
             .replace("ş", "s")
@@ -301,16 +299,16 @@ class UzayManga : HttpSource() {
         GenreFilter(),
         StatusFilter(),
         CountryFilter(),
-        SortFilter()
+        SortFilter(),
     )
 
     private class GenreFilter : Filter.Select<String>(
         "Kategori",
         arrayOf(
-            "Hepsi", "Aksiyon", "Avcı", "Büyü", "Canavar", "Çete", "Doğaüstü", 
-            "Dövüş", "Dövüş-sanatları", "Dram", "Fantastik", "Geri-dönüş", 
-            "Harem", "Komedi", "Macera", "Manhwa", "Murim", "Okul", "Reankarnasyon", 
-            "Romantik", "Sistem", "Shounen"
+            "Hepsi", "Aksiyon", "Avcı", "Büyü", "Canavar", "Çete", "Doğaüstü",
+            "Dövüş", "Dövüş-sanatları", "Dram", "Fantastik", "Geri-dönüş",
+            "Harem", "Komedi", "Macera", "Manhwa", "Murim", "Okul", "Reankarnasyon",
+            "Romantik", "Sistem", "Shounen",
         )
     ) {
         fun toUriPart() = values[state]
@@ -321,10 +319,10 @@ class UzayManga : HttpSource() {
         arrayOf("Hepsi", "Devam Ediyor", "Tamamlandı", "Ara Verdi")
     ) {
         fun toUriPart() = when (state) {
-            1 -> "3" // Devam Ediyor
-            2 -> "1" // Tamamlandı  
-            3 -> "2" // Ara Verdi
-            else -> ""
+            1 -> "3", // Devam Ediyor
+            2 -> "1", // Tamamlandı
+            3 -> "2", // Ara Verdi
+            else -> "",
         }
     }
 
@@ -333,10 +331,10 @@ class UzayManga : HttpSource() {
         arrayOf("Hepsi", "Kore", "Japonya", "Çin")
     ) {
         fun toUriPart() = when (state) {
-            1 -> "2" // Kore
-            2 -> "3" // Japonya
-            3 -> "1" // Çin
-            else -> ""
+            1 -> "2", // Kore
+            2 -> "3", // Japonya
+            3 -> "1", // Çin
+            else -> "",
         }
     }
 
@@ -345,11 +343,11 @@ class UzayManga : HttpSource() {
         arrayOf("Popülerlik", "Yeni Eklenen", "Alfabetik", "Puan")
     ) {
         fun toUriPart() = when (state) {
-            0 -> "4" // Popülerlik
-            1 -> "3" // Yeni Eklenen
-            2 -> "1" // Alfabetik
-            3 -> "2" // Puan
-            else -> "4"
+            0 -> "4", // Popülerlik
+            1 -> "3", // Yeni Eklenen
+            2 -> "1", // Alfabetik
+            3 -> "2", // Puan
+            else -> "4",
         }
     }
 
