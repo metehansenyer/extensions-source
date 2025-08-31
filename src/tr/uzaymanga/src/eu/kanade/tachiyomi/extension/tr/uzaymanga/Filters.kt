@@ -39,8 +39,8 @@ class OrderFilter(default: String? = null) : SelectFilter(
 ) {
     companion object {
         val LATEST = FilterList(OrderFilter("latest"))
-        val POPULAR = FilterList(OrderFilter("popular")) 
-    }
+        val POPULAR = FilterList(OrderFilter("popular"))
+        }
 }
 
 fun getFilters() = FilterList(
