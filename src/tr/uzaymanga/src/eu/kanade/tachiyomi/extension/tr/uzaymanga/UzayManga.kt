@@ -8,7 +8,7 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -22,7 +22,7 @@ import uy.kohesive.injekt.injectLazy
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class UzayManga : HttpSource() {
+class UzayManga : ParsedHttpSource() {
     override val name = "Uzay Manga"
 
     override val baseUrl = "https://uzaymanga.com"
@@ -153,9 +153,11 @@ class UzayManga : HttpSource() {
     private fun String.contains(vararg fragment: String): Boolean =
         fragment.any { trim().contains(it, ignoreCase = true) }
 
-    private val URL_SEARCH_PREFIX = "slug:"
-    private val dateFormat = SimpleDateFormat("MMM d ,yyyy", Locale("tr"))
-    private val pageRegex = """\\"path\\":\\"([^"]+)\\""".trimIndent().toRegex()
+    companion object {
+        const val URL_SEARCH_PREFIX = "slug:"
+        val dateFormat = SimpleDateFormat("MMM d ,yyyy", Locale("tr"))
+        val pageRegex = """\\"path\\":\\"([^"]+)\\""".trimIndent().toRegex()
+    }
 }
 
 @Serializable
