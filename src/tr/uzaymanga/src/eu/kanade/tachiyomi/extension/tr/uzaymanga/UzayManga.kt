@@ -48,26 +48,26 @@ class UzayManga : ParsedHttpSource() {
         .set("origin", baseUrl)
 
     // Popular
-    override fun popularMangaRequest(page: Int): Request =
+    override fun popularMangaRequest(page: Int) = searchMangaRequest(page, "", popularFilter)
+    override fun popularMangaParse(response: Response) = searchMangaParse(response)
+
+    // Latest
+    override fun latestUpdatesRequest(page: Int): Request =
         GET(baseUrl.toHttpUrl().newBuilder().addQueryParameter("page", page.toString()).build(), headers)
 
-    override fun popularMangaParse(response: Response): MangasPage {
-        return super.popularMangaParse(response)
+    override fun latestUpdatesParse(response: Response): MangasPage {
+        return super.latestUpdatesParse(response)
     }
 
-    override fun popularMangaSelector() = "div[id='content'] > section > section > div.grid.grid.grid-cols-1 > section > div.grid > div"
+    override fun latestUpdatesSelector() = "div[id='content'] > section > section > div.grid.grid.grid-cols-1 > section > div.grid > div"
 
-    override fun popularMangaFromElement(element: Element) = SManga.create().apply {
+    override fun latestUpdatesFromElement(element: Element) = SManga.create().apply {
         title = element.selectFirst("a:first-child h2")!!.text()
         thumbnail_url = element.selectFirst(".card-image img")?.absUrl("src")
         setUrlWithoutDomain(element.selectFirst("a:first-child")!!.absUrl("href"))
     }
 
-    override fun popularMangaNextPageSelector() = "section[aria-label='navigation'] a.rounded-r-lg"
-
-    // Latest
-    override fun latestUpdatesRequest(page: Int) = searchMangaRequest(page, "", latestFilter)
-    override fun latestUpdatesParse(response: Response) = searchMangaParse(response)
+    override fun latestUpdatesNextPageSelector() = "section[aria-label='navigation'] a.rounded-r-lg"
 
     // Search
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
@@ -317,7 +317,7 @@ class UzayManga : ParsedHttpSource() {
         Pair("Popüler", "4"),
     )
 
-    protected open val latestFilter by lazy { FilterList(OrderByFilter("", orderByFilterOptions, "3")) }
+    protected open val popularFilter by lazy { FilterList(OrderByFilter("", orderByFilterOptions, "4")) }
 
     protected class GenreData(
         val name: String,
@@ -487,9 +487,9 @@ class UzayManga : ParsedHttpSource() {
     protected open fun Elements.imgAttr(): String = this.first()!!.imgAttr()
 
     // Unused
-    override fun latestUpdatesSelector(): String = throw UnsupportedOperationException()
-    override fun latestUpdatesFromElement(element: Element): SManga = throw UnsupportedOperationException()
-    override fun latestUpdatesNextPageSelector(): String? = throw UnsupportedOperationException()
+    override fun popularMangaSelector(): String = throw UnsupportedOperationException()
+    override fun popularMangaFromElement(element: Element): SManga = throw UnsupportedOperationException()
+    override fun popularMangaNextPageSelector(): String? = throw UnsupportedOperationException()
 
     override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
 
