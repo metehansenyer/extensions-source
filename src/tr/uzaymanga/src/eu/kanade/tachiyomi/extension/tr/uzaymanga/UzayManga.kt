@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.tr.uzaymanga
 
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -328,7 +329,7 @@ class UzayManga : ParsedHttpSource() {
     protected class Genre(
         name: String,
         val value: String,
-        state: Boolean = false,
+        val state: Boolean = false,
     ) : Filter.Checkbox(name, state)
 
     protected class GenreListFilter(name: String, genres: List<Genre>) : Filter.Group<Genre>(name, genres)
@@ -455,9 +456,11 @@ class UzayManga : ParsedHttpSource() {
                 val mangaLink = response.asJsoup().selectFirst(chapterMangeUrlSelector)
                 if (mangaLink != null) {
                     val href = mangaLink.attr("href")
-                    val newUrl = href.toHttpUrlOrNull() ?: return null
-                    val isNewMangaUrl = (baseMangaUrl.host == newUrl.host && pathLengthIs(newUrl, 3) && newUrl.pathSegments[0] == baseMangaUrl.pathSegments[0])
-                    if (isNewMangaUrl) return newUrl.pathSegments[2]
+                    val newUrl = href.toHttpUrlOrNull()
+                    if (newUrl != null) {
+                        val isNewMangaUrl = (baseMangaUrl.host == newUrl.host && pathLengthIs(newUrl, 3) && newUrl.pathSegments[0] == baseMangaUrl.pathSegments[0])
+                        if (isNewMangaUrl) return newUrl.pathSegments[2]
+                    }
                 }
             }
         }
