@@ -11,8 +11,6 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -30,6 +28,8 @@ class UzayManga : ParsedHttpSource() {
     override val name = "Uzay Manga"
 
     override val baseUrl = "https://uzaymanga.com"
+
+    private val cdnUrl = "https://manga2.efsaneler.can.re"
 
     override val lang = "tr"
 
@@ -242,37 +242,16 @@ class UzayManga : ParsedHttpSource() {
     }
 
     // Pages
-    open val pageSelector = "section[title='manga'] > div > section.pb-5 > div.flex > div.grid > div.flex > img"
-
     override fun pageListParse(document: Document): List<Page> {
-        val chapterUrl = document.location()
-        val htmlPages = document.select(pageSelector)
-            .filterNot { it.imgAttr().isEmpty() }
-            .mapIndexed { i, img -> Page(i, chapterUrl, img.imgAttr()) }
+        val script = document.select("script")
+            .map { it.html() }
+            .firstOrNull { pageRegex.find(it) != null }
+            ?: return emptyList()
 
-        if (htmlPages.isNotEmpty()) { return htmlPages }
-
-        val docString = document.toString()
-        val imageListJson = JSON_IMAGE_LIST_REGEX.find(docString)?.destructured?.toList()?.get(0).orEmpty()
-        val imageList = try {
-            json.parseToJsonElement(imageListJson).jsonArray
-        } catch (_: IllegalArgumentException) {
-            emptyList()
-        }
-        val scriptPages = imageList.mapIndexed { i, jsonEl ->
-            Page(i, chapterUrl, jsonEl.jsonPrimitive.content)
-        }
-
-        return scriptPages
-    }
-
-    override fun imageRequest(page: Page): Request {
-        val newHeaders = headersBuilder()
-            .set("Accept", "image/avif,image/webp,image/png,image/jpeg,*/*")
-            .set("Referer", page.url)
-            .build()
-
-        return GET(page.imageUrl!!, newHeaders)
+        return pageRegex.findAll(script).mapIndexed { index, result ->
+            val url = result.groups.get(1)!!.value
+            Page(index, document.location(), "$cdnUrl/$url")
+        }.toList()
     }
 
     // Filters
@@ -508,6 +487,6 @@ class UzayManga : ParsedHttpSource() {
     companion object {
         const val URL_SEARCH_PREFIX = "url:"
         val dateFormat = SimpleDateFormat("MMMM dd ,yyyy", Locale("tr"))
-        val JSON_IMAGE_LIST_REGEX = "\"images\"\\s*:\\s*(\\[.*?])".toRegex()
+        val pageRegex = """\\"path\\":\\"([^"]+)\\""".trimIndent().toRegex()
     }
 }
