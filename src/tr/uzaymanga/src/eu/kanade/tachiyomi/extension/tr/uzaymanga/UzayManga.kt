@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.extension.tr.uzaymanga
 
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -13,9 +12,6 @@ import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -26,7 +22,6 @@ import org.jsoup.nodes.Element
 import org.jsoup.select.Elements
 import rx.Observable
 import uy.kohesive.injekt.injectLazy
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -205,7 +200,7 @@ class UzayManga : ParsedHttpSource() {
                     ?.getOrNull(1)
                     ?.ownText()
                     ?.parseChapterDate() ?: parseUpdatedOnDate("Ekim 29 ,2023") // :D
-                
+
                 chapters.forEach { chapter ->
                     chapter.date_upload = seriesDate
                 }
