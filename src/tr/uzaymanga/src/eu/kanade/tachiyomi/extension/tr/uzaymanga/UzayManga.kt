@@ -158,7 +158,7 @@ class UzayManga : ParsedHttpSource() {
                 ?.select("span")
                 ?.getOrNull(1)
                 ?.ownText()
-                ?.parseStatus()
+                ?.parseStatus() ?: SManga.UNKNOWN
             thumbnail_url = seriesDetails.select(seriesThumbnailSelector).imgAttr()
 
             val genres = seriesDetails.select(seriesGenreSelector).map { it.text() }.toMutableList()
@@ -229,7 +229,7 @@ class UzayManga : ParsedHttpSource() {
     override fun chapterFromElement(element: Element) = SChapter.create().apply {
         setUrlWithoutDomain(element.absUrl("href"))
         name = element.selectFirst(chapterListNameSelector)?.text() ?: "Bölüm"
-        date_upload = element.selectFirst(chapterListUploadSelector)?.text()?.parseChapterDate()
+        date_upload = element.selectFirst(chapterListUploadSelector)?.text()?.parseChapterDate() ?: 0L
     }
 
     protected open fun String?.parseChapterDate(): Long {
@@ -334,7 +334,7 @@ class UzayManga : ParsedHttpSource() {
         name: String,
         val value: String,
         val state: Boolean = false,
-    ) : Filter.Checkbox(name, state)
+    ) : Filter.CheckBox(name, state)
 
     protected class GenreListFilter(name: String, genres: List<Genre>) : Filter.Group<Genre>(name, genres)
 
