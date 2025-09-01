@@ -333,7 +333,7 @@ class UzayManga : ParsedHttpSource() {
     protected class Genre(
         name: String,
         val value: String,
-        val state: Boolean = false,
+        override val state: Boolean = false,
     ) : Filter.CheckBox(name, state)
 
     protected class GenreListFilter(name: String, genres: List<Genre>) : Filter.Group<Genre>(name, genres)
