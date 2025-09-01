@@ -48,12 +48,10 @@ class UzayManga : ParsedHttpSource() {
         .set("origin", baseUrl)
 
     // Popular
-    override fun popularMangaRequest(page: Int): Request = {
-        val url = baseUrl.toHttpUrl().newBuilder()
+    override fun popularMangaRequest(page: Int): Request =
+        GET(baseUrl.toHttpUrl().newBuilder()
             .addQueryParameter("page", page.toString())
-
-        return GET(url.build(), headers)
-    }
+            .build(), headers)
 
     override fun popularMangaParse(response: Response): MangasPage {
         return super.popularMangaParse(response)
@@ -64,7 +62,7 @@ class UzayManga : ParsedHttpSource() {
     override fun popularMangaFromElement(element: Element) = SManga.create().apply {
         title = element.selectFirst("a:first-child h2")!!.text()
         thumbnail_url = element.selectFirst(".card-image img")?.absUrl("src")
-        setUrlWithoutDomain(element.selectFirst("a:first-child")?.absUrl("href"))
+        setUrlWithoutDomain(element.selectFirst("a:first-child")!!.absUrl("href"))
     }
 
     override fun popularMangaNextPageSelector() = "section[aria-label='navigation'] a.rounded-r-lg"
