@@ -35,7 +35,7 @@ class UzayManga : ParsedHttpSource() {
 
     override val supportsLatest = true
 
-    override val versionId = 4
+    override val versionId = 5
 
     override val client = network.cloudflareClient.newBuilder()
         .rateLimit(3)
@@ -291,9 +291,11 @@ class UzayManga : ParsedHttpSource() {
     protected class StatusFilter(
         name: String,
         options: Array<Pair<String, String>>,
+        defaultOrder: String? = null,
     ) : SelectFilter(
         name,
         options,
+        defaultOrder,
     )
 
     protected open val statusOptions = arrayOf(
@@ -322,8 +324,8 @@ class UzayManga : ParsedHttpSource() {
         Pair("Popüler", "4"),
     )
 
-    protected open val popularFilter by lazy { FilterList(OrderByFilter("", orderByFilterOptions, "popular")) }
-    protected open val latestFilter by lazy { FilterList(OrderByFilter("", orderByFilterOptions, "latest")) }
+    protected open val popularFilter by lazy { FilterList(OrderByFilter("", orderByFilterOptions, "4")) }
+    protected open val latestFilter by lazy { FilterList(OrderByFilter("", orderByFilterOptions, "3")) }
 
     protected class GenreData(
         val name: String,
@@ -415,6 +417,7 @@ class UzayManga : ParsedHttpSource() {
     )
 
     protected open val countryOptions = arrayOf(
+        Pair("Tümü", ""),
         Pair("Çin", "1"),
         Pair("Kore", "2"),
         Pair("Japon", "3"),
@@ -433,7 +436,7 @@ class UzayManga : ParsedHttpSource() {
         if (genrelist.isNotEmpty()) {
             filters.addAll(
                 listOf(
-                    Filter.Header("Genre Exclude"),
+                    Filter.Separator(),
                     GenreListFilter("Kategoriler", getGenreList()),
                 ),
             )
