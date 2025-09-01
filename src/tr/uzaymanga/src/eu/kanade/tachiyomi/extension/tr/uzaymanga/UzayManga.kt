@@ -132,11 +132,11 @@ class UzayManga : ParsedHttpSource() {
     // Manga details
     open val seriesDetailsSelector = "section[title='manga'] > div > section.relative"
     open val seriesTitleSelector = "div > div.content-details > h1"
-    open val seriesAuthorSelector = "div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span:contains("Tarafından")"
+    open val seriesAuthorSelector = "div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span"
     open val seriesDescriptionSelector = "div > div.content-details > div.grid.grid-cols-1 > div.summary > p"
     open val seriesGenreSelector = "div > div.content-details > div.flex.flex-wrap > a[href^='search?categories']"
-    open val seriesCountrySelector = "div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span:contains("Ülke")"
-    open val seriesStatusSelector = "div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span:contains("Durum")"
+    open val seriesCountrySelector = "div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span"
+    open val seriesStatusSelector = "div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span"
     open val seriesThumbnailSelector = "div > div.content-info > img"
 
     override fun mangaDetailsParse(document: Document) = SManga.create().apply {
@@ -144,14 +144,16 @@ class UzayManga : ParsedHttpSource() {
             title = seriesDetails.selectFirst(seriesTitleSelector)
                 ?.text()
                 ?: "Seri İsmi Alınamadı"
-            author = seriesDetails.selectFirst(seriesAuthorSelector)
+            author = seriesDetails.select(seriesAuthorSelector)
+                .firstOrNull { it.text().contains("Tarafından") }
                 ?.parent()
                 ?.select("span")
                 ?.getOrNull(1)
                 ?.ownText()
                 ?: "Yazar Alınamadı"
             description = seriesDetails.select(seriesDescriptionSelector).joinToString("\n") { it.text() }.trim()
-            status = seriesDetails.selectFirst(seriesStatusSelector)
+            status = seriesDetails.select(seriesStatusSelector)
+                .firstOrNull { it.text().contains("Durum") }
                 ?.parent()
                 ?.select("span")
                 ?.getOrNull(1)
@@ -161,7 +163,8 @@ class UzayManga : ParsedHttpSource() {
 
             val genres = seriesDetails.select(seriesGenreSelector).map { it.text() }.toMutableList()
             // Add country to genres if available (second span from country selector)
-            seriesDetails.selectFirst(seriesCountrySelector)
+            seriesDetails.select(seriesCountrySelector)
+                .firstOrNull { it.text().contains("Ülke") }
                 ?.parent()
                 ?.select("span")
                 ?.getOrNull(1)
@@ -184,7 +187,7 @@ class UzayManga : ParsedHttpSource() {
     override fun chapterListSelector() = "section[title='manga'] > div > section.relative > div > div.content-details > div > div > div[aria-label='episodes'] > a"
     open val chapterListNameSelector = "h3.chapternum"
     open val chapterListUploadSelector = "span.text-slate-400.text-sm"
-    open val chapterSeriesUploadSelector = "section[title='manga'] > div > section.relative > div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span:contains("Yayınlanma")"
+    open val chapterSeriesUploadSelector = "section[title='manga'] > div > section.relative > div > div.content-details > div.grid.grid-cols-1 > div.flex > div > span"
 
     override fun chapterListParse(response: Response): List<SChapter> {
         val document = response.asJsoup()
@@ -195,7 +198,8 @@ class UzayManga : ParsedHttpSource() {
             // Check if the oldest chapter (Chapter 1) has no date
             if (chapters.last().date_upload == 0L) {
                 // If Chapter 1 is empty, set all chapters to series publication date
-                val seriesDate = document.selectFirst(chapterSeriesUploadSelector)
+                val seriesDate = document.select(chapterSeriesUploadSelector)
+                    .firstOrNull { it.text().contains("Yayınlanma") }
                     ?.parent()
                     ?.select("span")
                     ?.getOrNull(1)
