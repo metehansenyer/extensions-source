@@ -94,7 +94,9 @@ class UzayManga : ParsedHttpSource() {
                     hasOrderFilter = true
                 }
                 is GenreListFilter -> {
-                    val genreIds = filter.checked.map { it.value }
+                    val genreIds = filter.state
+                        .filter { it.state }
+                        .map { it.value }
                     if (genreIds.isNotEmpty()) {
                         url.addQueryParameter("categories", genreIds.joinToString("%2C"))
                     }
@@ -331,9 +333,15 @@ class UzayManga : ParsedHttpSource() {
     protected class Genre(
         name: String,
         val value: String,
-    ) : Filter.CheckBox(name, state)
+    ) : Filter.CheckBox(name)
 
-    protected class GenreListFilter(name: String, genres: List<Genre>) : Filter.Group<Genre>(name, genres)
+    protected class GenreListFilter(
+        name: String,
+        genres: List<Genre>,
+    ) : Filter.Group<Genre>(
+        name,
+        genres,
+    )
 
     protected val genrelist: List<GenreData> = listOf(
         GenreData("Aksiyon", "1"),
