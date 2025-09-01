@@ -49,9 +49,7 @@ class UzayManga : ParsedHttpSource() {
 
     // Popular
     override fun popularMangaRequest(page: Int): Request =
-        GET(baseUrl.toHttpUrl().newBuilder()
-            .addQueryParameter("page", page.toString())
-            .build(), headers)
+        GET(baseUrl.toHttpUrl().newBuilder().addQueryParameter("page", page.toString()).build(), headers)
 
     override fun popularMangaParse(response: Response): MangasPage {
         return super.popularMangaParse(response)
