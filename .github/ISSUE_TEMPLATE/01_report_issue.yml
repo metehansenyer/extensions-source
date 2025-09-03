@@ -1,0 +1,87 @@
+name: Issue report
+description: Report a source issue
+labels: [Bug]
+body:
+
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Extension name and version (found in Browse → Extensions)
+      placeholder: "Not Real Scans 1.4.1"
+    validations:
+      required: true
+
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: "English"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce-steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Go to...
+        2. Click on...
+        3. Issue occurs...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      placeholder: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      placeholder: What happens instead?
+    validations:
+      required: true
+
+  - type: input
+    id: tachiyomi-version
+    attributes:
+      label: Mihon/Tachiyomi version
+      description: Version found in More → About
+      placeholder: "0.18.0"
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version
+      placeholder: "Android 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-details
+    attributes:
+      label: Additional details
+      placeholder: Screenshots, logs, or other relevant information
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Prerequisites
+      description: Please confirm these before submitting
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I have updated Mihon to the latest version
+          required: true
+        - label: I have updated all installed extensions
+          required: true
+        - label: This is a source-specific issue (not a general app problem)
+          required: true
