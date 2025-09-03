@@ -24,14 +24,6 @@ Alternatively, you can manually add the repository by copying and pasting the fo
 https://raw.githubusercontent.com/metehansenyer/extensions/repo/index.min.json
 ```
 
-### Supported Apps
-- Mihon
-- TachiyomiSY
-- Komikku
-- Yokai
-- TachiyomiJ2K
-- TachiyomiAZ
-
 ## Requests
 
 ### How to Request
