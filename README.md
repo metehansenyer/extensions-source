@@ -12,7 +12,11 @@ A curated collection of manga reader extensions for Mihon and Tachiyomi-based ap
 # Installation
 
 ### Quick Setup
-If you have Mihon installed on your device (alternatively, TachiyomiSY, Komikku, Yokai, TachiyomiJ2K, or TachiyomiAZ), you can easily add this repository by clicking [this link](tachiyomi://add-repo?https://raw.githubusercontent.com/metehansenyer/extensions/repo/index.min.json/).
+If you have Mihon installed on your device (alternatively, TachiyomiSY, Komikku, Yokai, TachiyomiJ2K, or TachiyomiAZ), you can easily add this repository by copying and pasting the following link into your browser on your mobile device:
+
+```
+tachiyomi://add-repo?url=https://raw.githubusercontent.com/metehansenyer/extensions/repo/index.min.json
+```
 
 ### Manual Setup
 Alternatively, you can manually add the repository by copying and pasting the following URL into the "Add Repository" section of your app:
