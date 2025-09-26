@@ -589,7 +589,7 @@ abstract class LibGroup(
 
         private const val API_DOMAIN_PREF = "MangaLibApiDomain"
         private const val API_DOMAIN_TITLE = "Выбор домена API"
-        private const val API_DOMAIN_DEFAULT = "https://api.imglib.info"
+        private const val API_DOMAIN_DEFAULT = "https://api.cdnlibs.org"
 
         private const val TOKEN_STORE = "TokenStore"
 
