@@ -9,4 +9,13 @@ class KoreliScans : MangaThemesia(
     "https://koreliscans.net",
     "tr",
     dateFormat = SimpleDateFormat("d MMMM yyyy", Locale("tr")),
-)
+) {
+    open val pageListImageSelector = "div#readerarea img"
+
+    // Pages
+    override fun pageListParse(document: Document): List<Page> {
+        return document.select(pageListImageSelector).mapIndexed { i, img ->
+            Page(i, imageUrl = img.attr("src"))
+        }
+    }
+}
