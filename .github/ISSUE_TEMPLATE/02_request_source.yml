@@ -1,5 +1,5 @@
-name: Source request
-description: Request a new source
+name: 🌐 Source request
+description: Suggest a new source for Keiyoushi
 labels: [Source request]
 body:
 
@@ -7,44 +7,61 @@ body:
     id: name
     attributes:
       label: Source name
-      placeholder: "Not Real Scans"
+      placeholder: |
+        Example: "Not Real Scans"
     validations:
       required: true
 
   - type: input
     id: link
     attributes:
-      label: Source URL
-      placeholder: "https://notrealscans.org"
+      label: Source link
+      placeholder: |
+        Example: "https://notrealscans.org"
     validations:
       required: true
 
   - type: input
     id: language
     attributes:
-      label: Language
-      placeholder: "English"
+      label: Source language
+      placeholder: |
+        Example: "English"
     validations:
       required: true
 
   - type: textarea
     id: other-details
     attributes:
-      label: Additional information
+      label: Other details
       placeholder: |
-        Content type (manga, manhwa, etc.)
-        NSFW status
-        Any other relevant details
+        Additional details and attachments.
+            Example:
+                "18+/NSFW = yes"
 
   - type: checkboxes
     id: acknowledgements
     attributes:
-      label: Prerequisites
-      description: Please confirm these before submitting
+      label: Acknowledgements
+      description: Your issue will be closed if you haven't done these steps.
       options:
-        - label: I have checked that this source doesn't already exist in the [extension listing](https://keiyoushi.github.io/extensions/)
+        - label: I have checked that the extension does not already exist by searching the [extension listing](https://keiyoushi.github.io/extensions/) and verified it does not appear there.
           required: true
-        - label: I have searched existing issues and this is not a duplicate request
+        - label: I have searched [existing issues](https://github.com/keiyoushi/extensions-source/issues) both open & closed, and confirm that this is a new unreported issue.
           required: true
-        - label: The source is active and has sufficient content
+        - label: I have written a meaningful title with the source name.
           required: true
+        - label: I will correctly fill out all of the requested information in this form.
+          required: true
+
+  - type: textarea
+    attributes:
+      label: <!-- footer -->
+      description: Do **not** modify. This is a reminder for other users to vote.
+      value: |
+        ---
+
+        Add a :+1: [reaction] to [issues you find important].
+
+        [reaction]: https://github.blog/2016-03-10-add-reactions-to-pull-requests-issues-and-comments/
+        [issues you find important]: https://github.com/keiyoushi/extensions-source/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc
