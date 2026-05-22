@@ -1,7 +1,7 @@
 package eu.kanade.tachiyomi.extension.tr.sadscans
 
-import eu.kanade.tachiyomi.lib.dataimage.DataImageInterceptor
-import eu.kanade.tachiyomi.lib.dataimage.dataImageAsUrl
+import keiyoushi.lib.dataimage.DataImageInterceptor
+import keiyoushi.lib.dataimage.dataImageAsUrl
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
