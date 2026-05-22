@@ -12,18 +12,18 @@ private val DATE_FORMATTER by lazy {
     SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 }
 
-private fun parseDate(dateStr: String): Long {
-    return runCatching { DATE_FORMATTER.parse(dateStr)?.time }
-        .getOrNull() ?: 0L
-}
+private fun parseDate(dateStr: String): Long = runCatching { DATE_FORMATTER.parse(dateStr)?.time }
+    .getOrNull() ?: 0L
 
 @Serializable
 data class ZeistMangaDto(
     val feed: ZeistMangaFeedDto? = null,
+    @SerialName("openSearch\$totalResults") val totalResults: TotalResult? = null,
 )
 
 @Serializable
 data class ZeistMangaFeedDto(
+    @SerialName("openSearch\$totalResults") val totalResults: TotalResult? = null,
     val entry: List<ZeistMangaEntryDto>? = emptyList(),
 )
 
@@ -53,14 +53,10 @@ data class ZeistMangaEntryDto(
         date_upload = parseDate(chapterDate)
     }
 
-    private fun getChapterLink(list: List<ZeistMangaEntryLink>): String {
-        return list.first { it.rel == "alternate" }.href
-    }
+    private fun getChapterLink(list: List<ZeistMangaEntryLink>): String = list.first { it.rel == "alternate" }.href
 
-    private fun getThumbnail(thumbnail: ZeistMangaEntryThumbnail): String {
-        return thumbnail.url.replace("""\/s.+?-c\/""".toRegex(), "/w600/")
-            .replace("""=s(?!.*=s).+?-c$""".toRegex(), "=w600")
-    }
+    private fun getThumbnail(thumbnail: ZeistMangaEntryThumbnail): String = thumbnail.url.replace("""\/s.+?-c\/""".toRegex(), "/w600/")
+        .replace("""=s(?!.*=s).+?-c$""".toRegex(), "=w600")
 
     private fun getThumbnailFromContent(html: ZeistMangaEntryContentDto): String {
         val document = Jsoup.parse(html.t)
@@ -80,6 +76,11 @@ data class ZeistMangaEntryPublishedDto(
 
 @Serializable
 data class ZeistMangaEntryContentDto(
+    @SerialName("\$t") val t: String,
+)
+
+@Serializable
+data class TotalResult(
     @SerialName("\$t") val t: String,
 )
 

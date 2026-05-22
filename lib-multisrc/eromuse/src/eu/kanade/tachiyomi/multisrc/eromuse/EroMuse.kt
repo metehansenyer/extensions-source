@@ -11,7 +11,6 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -24,8 +23,6 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
     override val lang = "en"
 
     override val supportsLatest = true
-
-    override val client: OkHttpClient = network.cloudflareClient
 
     /**
      * Browse, search, and latest all run through an ArrayDeque of requests that acts as a stack we push and pop to/from
@@ -76,24 +73,19 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
 
     protected fun Element.imgAttr(): String = if (this.hasAttr("data-src")) this.attr("abs:data-src") else this.attr("abs:src")
 
-    private fun mangaFromElement(element: Element): SManga {
-        return SManga.create().apply {
-            setUrlWithoutDomain(element.attr("href"))
-            title = element.text()
-            thumbnail_url = element.select("img").firstOrNull()?.imgAttr()
-        }
+    private fun mangaFromElement(element: Element): SManga = SManga.create().apply {
+        setUrlWithoutDomain(element.attr("href"))
+        title = element.text()
+        thumbnail_url = element.select("img").firstOrNull()?.imgAttr()
     }
 
-    protected fun getAlbumType(url: String, default: Int = AUTHOR): Int {
-        return albums.filter { it.third != SEARCH_RESULTS_OR_BASE && url.contains(it.second, true) }
-            .getOrElse(0) { Triple(null, null, default) }.third
-    }
+    protected fun getAlbumType(url: String, default: Int = AUTHOR): Int = albums.filter { it.third != SEARCH_RESULTS_OR_BASE && url.contains(it.second, true) }
+        .getOrElse(0) { Triple(null, null, default) }.third
 
     protected fun parseManga(document: Document): MangasPage {
         fun internalParse(internalDocument: Document): List<SManga> {
             val authorDocument = if (stackItem.pageType == VARIOUS_AUTHORS) {
-                internalDocument.select(albumSelector).let {
-                        elements ->
+                internalDocument.select(albumSelector).let { elements ->
                     elements.reversed().map { pageStack.addLast(StackItem(it.attr("abs:href"), AUTHOR)) }
                 }
                 client.newCall(stackRequest()).execute().asJsoup()
@@ -107,15 +99,16 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
         if (stackItem.pageType in listOf(VARIOUS_AUTHORS, SEARCH_RESULTS_OR_BASE)) document.addNextPageToStack()
         val mangas = when (stackItem.pageType) {
             VARIOUS_AUTHORS -> {
-                document.select(albumSelector).let {
-                        elements ->
+                document.select(albumSelector).let { elements ->
                     elements.reversed().map { pageStack.addLast(StackItem(it.attr("abs:href"), AUTHOR)) }
                 }
                 internalParse(document)
             }
+
             AUTHOR -> {
                 internalParse(document)
             }
+
             SEARCH_RESULTS_OR_BASE -> {
                 val searchMangas = mutableListOf<SManga>()
                 document.select(albumSelector)
@@ -130,10 +123,12 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
                                         pageStack.addLast(StackItem(url, VARIOUS_AUTHORS))
                                         if (searchMangas.isEmpty()) searchMangas += internalParse(client.newCall(stackRequest()).execute().asJsoup()) else null
                                     }
+
                                     2 -> { // eg. /comics/album/Fakku-Comics/Bosshi
                                         pageStack.addLast(StackItem(url, AUTHOR))
                                         if (searchMangas.isEmpty()) searchMangas += internalParse(client.newCall(stackRequest()).execute().asJsoup()) else null
                                     }
+
                                     else -> {
                                         // eg. 3 -> /comics/album/Fakku-Comics/Bosshi/After-Summer-After
                                         // eg. 5 -> /comics/album/Various-Authors/Firollian/Reward/Reward-22/ElfAlfie
@@ -142,6 +137,7 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
                                     }
                                 }
                             }
+
                             AUTHOR -> {
                                 if (depth == 1) { // eg. /comics/album/ShadBase-Comics
                                     pageStack.addLast(StackItem(url, AUTHOR))
@@ -152,11 +148,13 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
                                     searchMangas.add(mangaFromElement(element))
                                 }
                             }
+
                             else -> null // SEARCH_RESULTS_OR_BASE shouldn't be a case
                         }
                     }
                 searchMangas
             }
+
             else -> emptyList()
         }
         return MangasPage(mangas, pageStack.isNotEmpty())
@@ -233,23 +231,23 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
 
     // Details
 
-    override fun mangaDetailsParse(response: Response): SManga {
-        return SManga.create().apply {
-            with(response.asJsoup()) {
-                setUrlWithoutDomain(response.request.url.toString())
-                thumbnail_url = select("$albumSelector img").firstOrNull()?.imgAttr()
-                author = when (getAlbumType(url)) {
-                    AUTHOR -> {
-                        // eg. https://comics.8muses.com/comics/album/ShadBase-Comics/RickMorty
-                        // eg. https://comics.8muses.com/comics/album/Incase-Comics/Comic/Alfie
-                        select("div.top-menu-breadcrumb li:nth-child(2)").text()
-                    }
-                    VARIOUS_AUTHORS -> {
-                        // eg. https://comics.8muses.com/comics/album/Various-Authors/NLT-Media/A-Sunday-Schooling
-                        select("div.top-menu-breadcrumb li:nth-child(3)").text()
-                    }
-                    else -> null
+    override fun mangaDetailsParse(response: Response): SManga = SManga.create().apply {
+        with(response.asJsoup()) {
+            setUrlWithoutDomain(response.request.url.toString())
+            thumbnail_url = select("$albumSelector img").firstOrNull()?.imgAttr()
+            author = when (getAlbumType(url)) {
+                AUTHOR -> {
+                    // eg. https://comics.8muses.com/comics/album/ShadBase-Comics/RickMorty
+                    // eg. https://comics.8muses.com/comics/album/Incase-Comics/Comic/Alfie
+                    select("div.top-menu-breadcrumb li:nth-child(2)").text()
                 }
+
+                VARIOUS_AUTHORS -> {
+                    // eg. https://comics.8muses.com/comics/album/Various-Authors/NLT-Media/A-Sunday-Schooling
+                    select("div.top-menu-breadcrumb li:nth-child(3)").text()
+                }
+
+                else -> null
             }
         }
     }
@@ -317,8 +315,7 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
                 },
             )
 
-            document.nextPageOrNull()?.let {
-                    url ->
+            document.nextPageOrNull()?.let { url ->
                 pages.addAll(parsePages(client.newCall(GET(url, headers)).execute().asJsoup(), nestedChapterDocuments, pages))
             }
 
@@ -336,14 +333,12 @@ open class EroMuse(override val name: String, override val baseUrl: String) : Ht
 
     // Filters
 
-    override fun getFilterList(): FilterList {
-        return FilterList(
-            Filter.Header("Text search only combines with sort!"),
-            Filter.Separator(),
-            AlbumFilter(getAlbumList()),
-            SortFilter(getSortList()),
-        )
-    }
+    override fun getFilterList(): FilterList = FilterList(
+        Filter.Header("Text search only combines with sort!"),
+        Filter.Separator(),
+        AlbumFilter(getAlbumList()),
+        SortFilter(getSortList()),
+    )
 
     protected class AlbumFilter(private val vals: Array<Triple<String, String, Int>>) : Filter.Select<String>("Album", vals.map { it.first }.toTypedArray()) {
         fun selection() = AlbumFilterData(vals[state].second, vals[state].third)

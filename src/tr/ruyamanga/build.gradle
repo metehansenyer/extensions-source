@@ -3,8 +3,8 @@ ext {
     extClass = '.RuyaManga'
     themePkg = 'madara'
     baseUrl = 'https://www.ruyamanga2.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 4
     isNsfw = false
 }
 
-apply from: "$rootDir/common.gradle"
+apply plugin: "kei.plugins.extension.legacy"

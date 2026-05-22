@@ -29,14 +29,10 @@ abstract class Manga18(
 
     override val supportsLatest = true
 
-    override val client = network.cloudflareClient
-
     override fun headersBuilder() = super.headersBuilder()
         .set("Referer", "$baseUrl/")
 
-    override fun popularMangaRequest(page: Int): Request {
-        return GET("$baseUrl/list-manga/$page?order_by=views", headers)
-    }
+    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/list-manga/$page?order_by=views", headers)
 
     override fun popularMangaParse(response: Response): MangasPage {
         val document = response.asJsoup()
@@ -50,7 +46,7 @@ abstract class Manga18(
     }
 
     override fun popularMangaSelector() = "div.story_item"
-    override fun popularMangaNextPageSelector() = ".pagination a[rel=next]"
+    override fun popularMangaNextPageSelector() = ".pagination > li:last-child:not(.active)"
 
     override fun popularMangaFromElement(element: Element) = SManga.create().apply {
         setUrlWithoutDomain(element.selectFirst("a")!!.absUrl("href"))
@@ -58,9 +54,7 @@ abstract class Manga18(
         thumbnail_url = element.selectFirst("img")?.absUrl("src")
     }
 
-    override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/list-manga/$page", headers)
-    }
+    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/list-manga/$page", headers)
 
     override fun latestUpdatesParse(response: Response) = popularMangaParse(response)
     override fun latestUpdatesSelector() = popularMangaSelector()

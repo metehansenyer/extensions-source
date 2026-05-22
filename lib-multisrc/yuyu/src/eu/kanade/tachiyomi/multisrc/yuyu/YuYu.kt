@@ -27,8 +27,6 @@ abstract class YuYu(
     override val lang: String,
 ) : ParsedHttpSource() {
 
-    override val client = network.cloudflareClient
-
     override val supportsLatest = true
 
     // ============================== Popular ===============================
@@ -78,12 +76,11 @@ abstract class YuYu(
         return MangasPage(mangas, document.hasNextPage())
     }
 
-    private fun Document.hasNextPage() =
-        selectFirst(latestUpdatesNextPageSelector())?.absUrl("href")?.let {
-            selectFirst("a.page-link.active")
-                ?.absUrl("href")
-                .equals(it, ignoreCase = true).not()
-        } ?: false
+    private fun Document.hasNextPage() = selectFirst(latestUpdatesNextPageSelector())?.absUrl("href")?.let {
+        selectFirst("a.page-link.active")
+            ?.absUrl("href")
+            .equals(it, ignoreCase = true).not()
+    } ?: false
 
     // ============================== Search ===============================
 
@@ -94,6 +91,16 @@ abstract class YuYu(
     }
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            if (url.pathSegments.size < 2) {
+                throw Exception("Unsupported url")
+            }
+            return fetchSearchManga(page, "$PREFIX_SEARCH${url.pathSegments[1]}", filters)
+        }
         if (query.startsWith(PREFIX_SEARCH)) {
             val slug = query.substringAfter(PREFIX_SEARCH)
             return client.newCall(GET("$baseUrl/manga/$slug", headers))
@@ -133,14 +140,12 @@ abstract class YuYu(
         }
     }
 
-    protected fun String.toStatus(): Int {
-        return when (lowercase()) {
-            "em andamento" -> SManga.ONGOING
-            "completo" -> SManga.COMPLETED
-            "cancelado" -> SManga.CANCELLED
-            "hiato" -> SManga.ON_HIATUS
-            else -> SManga.UNKNOWN
-        }
+    protected fun String.toStatus(): Int = when (lowercase()) {
+        "em andamento" -> SManga.ONGOING
+        "completo" -> SManga.COMPLETED
+        "cancelado" -> SManga.CANCELLED
+        "hiato" -> SManga.ON_HIATUS
+        else -> SManga.UNKNOWN
     }
 
     protected open fun getMangaId(manga: SManga): String {
@@ -186,10 +191,8 @@ abstract class YuYu(
 
     // ============================== Pages ===============================
 
-    override fun pageListParse(document: Document): List<Page> {
-        return document.select("picture img").mapIndexed { idx, element ->
-            Page(idx, imageUrl = element.absUrl("src"))
-        }
+    override fun pageListParse(document: Document): List<Page> = document.select("picture img").mapIndexed { idx, element ->
+        Page(idx, imageUrl = element.absUrl("src"))
     }
 
     override fun imageUrlParse(document: Document) = ""

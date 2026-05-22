@@ -3,8 +3,8 @@ ext {
     extClass = '.WebtoonHatti'
     themePkg = 'madara'
     baseUrl = 'https://webtoonhatti.club'
-    overrideVersionCode = 0
+    overrideVersionCode = 7
     isNsfw = false
 }
 
-apply from: "$rootDir/common.gradle"
+apply plugin: "kei.plugins.extension.legacy"

@@ -9,7 +9,6 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.HttpUrl
@@ -26,8 +25,6 @@ abstract class ZeistManga(
 ) : HttpSource() {
 
     override val supportsLatest = true
-
-    override val client = network.cloudflareClient
 
     protected val json: Json by injectLazy()
 
@@ -55,10 +52,10 @@ abstract class ZeistManga(
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        val startIndex = maxMangaResults * (page - 1) + 1
+        val startIndex = MAX_MANGA_RESULTS * (page - 1) + 1
         val url = apiUrl()
             .addQueryParameter("orderby", "published")
-            .addQueryParameter("max-results", (maxMangaResults + 1).toString())
+            .addQueryParameter("max-results", (MAX_MANGA_RESULTS + 1).toString())
             .addQueryParameter("start-index", startIndex.toString())
             .build()
 
@@ -68,9 +65,9 @@ abstract class ZeistManga(
     override fun latestUpdatesParse(response: Response) = searchMangaParse(response)
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        val startIndex = maxMangaResults * (page - 1) + 1
+        val startIndex = MAX_MANGA_RESULTS * (page - 1) + 1
         val url = apiUrl()
-            .addQueryParameter("max-results", (maxMangaResults + 1).toString())
+            .addQueryParameter("max-results", (MAX_MANGA_RESULTS + 1).toString())
             .addQueryParameter("start-index", startIndex.toString())
 
         if (query.isNotBlank()) {
@@ -121,7 +118,7 @@ abstract class ZeistManga(
             .map { it.toSManga(baseUrl) }
 
         val mangalist = mangas.toMutableList()
-        if (mangas.size == maxMangaResults + 1) {
+        if (mangas.size == MAX_MANGA_RESULTS + 1) {
             mangalist.removeLast()
             return MangasPage(mangalist, true)
         }
@@ -132,6 +129,7 @@ abstract class ZeistManga(
     protected open val statusSelectorList = listOf(
         "Status",
         "Estado",
+        "الحالة",
     )
 
     protected open val authorSelectorList = listOf(
@@ -201,16 +199,39 @@ abstract class ZeistManga(
 
     protected open val chapterCategory: String = "Chapter"
 
+    private fun fetchChapter(url: String, startIndex: Int, maxResults: Int = MAX_CHAPTER_RESULTS): ZeistMangaDto {
+        val paginationUrl = url.toHttpUrl().newBuilder()
+            .setQueryParameter("start-index", startIndex.toString())
+            .setQueryParameter("max-results", maxResults.toString()).build().toString()
+
+        val res = client.newCall(GET(paginationUrl, headers)).execute()
+        return json.decodeFromString<ZeistMangaDto>(res.body.string())
+    }
+
     override fun chapterListParse(response: Response): List<SChapter> {
         val document = response.asJsoup()
-
+        val allEntries = mutableListOf<ZeistMangaEntryDto>()
         val url = getChapterFeedUrl(document)
-        val res = client.newCall(GET(url, headers)).execute()
 
-        val result = json.decodeFromString<ZeistMangaDto>(res.body.string())
-        return result.feed?.entry?.filter { it.category.orEmpty().any { category -> category.term == chapterCategory } }
-            ?.map { it.toSChapter(baseUrl) }
-            ?: throw Exception("Failed to parse from chapter API")
+        var startIndex = 1
+        // Get total first
+        val result = fetchChapter(url, startIndex, maxResults = 0)
+        val totalResults = (
+            result.totalResults?.t
+                ?: result.feed?.totalResults?.t
+            )?.toIntOrNull() ?: MAX_CHAPTER_RESULTS
+
+        while (allEntries.size < totalResults) {
+            val result = fetchChapter(url, startIndex)
+            val entries = result.feed?.entry ?: throw Exception("Failed to parse from chapter API")
+            if (entries.isEmpty()) break
+
+            allEntries.addAll(entries)
+            startIndex += entries.size
+        }
+        return allEntries
+            .filter { it.category.orEmpty().any { cat -> cat.term == chapterCategory } }
+            .map { it.toSChapter(baseUrl) }
     }
 
     protected open val useNewChapterFeed = false
@@ -234,7 +255,6 @@ abstract class ZeistManga(
 
         return apiUrl(chapterCategory)
             .addPathSegments(feed)
-            .addQueryParameter("max-results", maxChapterResults.toString())
             .build().toString()
     }
 
@@ -248,7 +268,7 @@ abstract class ZeistManga(
             ?.groupValues?.get(1)
             ?: throw Exception("Failed to find chapter feed")
 
-        return "$baseUrl$feed?alt=json&start-index=1&max-results=$maxChapterResults"
+        return "$baseUrl$feed?alt=json"
     }
 
     private val newChapterFeedRegex = """label\s*=\s*'([^']+)'""".toRegex()
@@ -290,11 +310,9 @@ abstract class ZeistManga(
 
     protected open val mangaCategory: String = "Series"
 
-    open fun apiUrl(feed: String = mangaCategory): HttpUrl.Builder {
-        return "$baseUrl/feeds/posts/default/-/".toHttpUrl().newBuilder()
-            .addPathSegment(feed)
-            .addQueryParameter("alt", "json")
-    }
+    open fun apiUrl(feed: String = mangaCategory): HttpUrl.Builder = "$baseUrl/feeds/posts/default/-/".toHttpUrl().newBuilder()
+        .addPathSegment(feed)
+        .addQueryParameter("alt", "json")
 
     protected open val hasFilters = false
 
@@ -398,12 +416,15 @@ abstract class ZeistManga(
         "ativo",
         "lançando",
         "مستمر",
+        "مستمرة",
     )
 
     protected open val statusCompletedList = listOf(
         "completed",
         "completo",
         "finalizado",
+        "مكتمل",
+        "مكتملة",
     )
 
     protected open val statusHiatusList = listOf(
@@ -437,7 +458,7 @@ abstract class ZeistManga(
     }
 
     companion object {
-        private const val maxMangaResults = 20
-        const val maxChapterResults = 999999
+        private const val MAX_MANGA_RESULTS = 20
+        const val MAX_CHAPTER_RESULTS = 150
     }
 }

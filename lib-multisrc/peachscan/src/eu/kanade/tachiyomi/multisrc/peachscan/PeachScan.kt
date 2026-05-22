@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.multisrc.peachscan
 
 import android.annotation.SuppressLint
-import eu.kanade.tachiyomi.lib.zipinterceptor.ZipInterceptor
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -11,6 +10,7 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.lib.zipinterceptor.ZipInterceptor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -39,7 +39,7 @@ abstract class PeachScan(
 
     override val supportsLatest = true
 
-    override val client = network.cloudflareClient
+    override val client = network.client
         .newBuilder()
         .addInterceptor(ZipInterceptor()::zipImageInterceptor)
         .build()
@@ -73,6 +73,14 @@ abstract class PeachScan(
     override fun latestUpdatesNextPageSelector() = null
 
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            val url = query.toHttpUrl()
+            if (url.host != baseUrl.toHttpUrl().host) {
+                throw Exception("Unsupported url")
+            }
+            val path = url.encodedPath
+            return fetchSearchManga(page, "$URL_SEARCH_PREFIX$path", filters)
+        }
         if (query.startsWith(URL_SEARCH_PREFIX)) {
             val manga = SManga.create().apply { url = query.substringAfter(URL_SEARCH_PREFIX) }
             return client.newCall(mangaDetailsRequest(manga))

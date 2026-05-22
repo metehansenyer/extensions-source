@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.multisrc.mangathemesia
 
-import eu.kanade.tachiyomi.lib.i18n.Intl
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.source.model.Filter
@@ -9,8 +8,9 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.ParsedHttpSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.lib.i18n.Intl
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -38,13 +38,11 @@ abstract class MangaThemesia(
     final override val lang: String,
     val mangaUrlDirectory: String = "/manga",
     val dateFormat: SimpleDateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.US),
-) : ParsedHttpSource() {
+) : HttpSource() {
 
     protected open val json: Json by injectLazy()
 
     override val supportsLatest = true
-
-    override val client = network.cloudflareClient
 
     override fun headersBuilder() = super.headersBuilder()
         .set("Referer", "$baseUrl/")
@@ -68,6 +66,9 @@ abstract class MangaThemesia(
 
     // Search
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
+        if (query.startsWith("https://")) {
+            return fetchSearchManga(page, "$URL_SEARCH_PREFIX$query", filters)
+        }
         if (query.startsWith(URL_SEARCH_PREFIX).not()) return super.fetchSearchManga(page, query, filters)
 
         val mangaPath = try {
@@ -99,18 +100,23 @@ abstract class MangaThemesia(
                 is AuthorFilter -> {
                     url.addQueryParameter("author", filter.state)
                 }
+
                 is YearFilter -> {
                     url.addQueryParameter("yearx", filter.state)
                 }
+
                 is StatusFilter -> {
                     url.addQueryParameter("status", filter.selectedValue())
                 }
+
                 is TypeFilter -> {
                     url.addQueryParameter("type", filter.selectedValue())
                 }
+
                 is OrderByFilter -> {
                     url.addQueryParameter("order", filter.selectedValue())
                 }
+
                 is GenreListFilter -> {
                     filter.state
                         .filter { it.state != Filter.TriState.STATE_IGNORE }
@@ -119,12 +125,14 @@ abstract class MangaThemesia(
                             url.addQueryParameter("genre[]", value)
                         }
                 }
+
                 // if site has project page, default value "hasProjectPage" = false
                 is ProjectFilter -> {
                     if (filter.selectedValue() == "project-filter-on") {
                         url.setPathSegment(0, projectPageString.substring(1))
                     }
                 }
+
                 else -> { /* Do Nothing */ }
             }
         }
@@ -133,27 +141,35 @@ abstract class MangaThemesia(
     }
 
     override fun searchMangaParse(response: Response): MangasPage {
+        val document = response.asJsoup()
+
         if (genrelist == null) {
-            genrelist = parseGenres(response.asJsoup(response.peekBody(Long.MAX_VALUE).string()))
+            genrelist = parseGenres(document)
         }
 
-        return super.searchMangaParse(response)
+        val mangas = document.select(searchMangaSelector()).map { element ->
+            searchMangaFromElement(element)
+        }
+
+        val hasNextPage = searchMangaNextPageSelector()?.let { selector ->
+            document.select(selector).first()
+        } != null
+
+        return MangasPage(mangas, hasNextPage)
     }
 
-    override fun searchMangaSelector() = ".utao .uta .imgu, .listupd .bs .bsx, .listo .bs .bsx"
+    protected open fun searchMangaSelector() = ".utao .uta .imgu, .listupd .bs .bsx, .listo .bs .bsx"
 
-    override fun searchMangaFromElement(element: Element) = SManga.create().apply {
+    protected open fun searchMangaFromElement(element: Element) = SManga.create().apply {
         thumbnail_url = element.select("img").imgAttr()
         title = element.select("a").attr("title")
         setUrlWithoutDomain(element.select("a").attr("href"))
     }
 
-    override fun searchMangaNextPageSelector() = "div.pagination .next, div.hpage .r"
+    protected open fun searchMangaNextPageSelector(): String? = "div.pagination .next, div.hpage .r"
 
     // Manga details
-    private fun selector(selector: String, contains: List<String>): String {
-        return contains.joinToString(", ") { selector.replace("%s", it) }
-    }
+    private fun selector(selector: String, contains: List<String>): String = contains.joinToString(", ") { selector.replace("%s", it) }
 
     open val seriesDetailsSelector = "div.bigcontent, div.animefull, div.main-info, div.postbody"
 
@@ -169,6 +185,7 @@ abstract class MangaThemesia(
             "الناشر",
             "İllüstratör",
             "Çizer",
+            "Sanatçı",
         ),
     )
 
@@ -238,7 +255,9 @@ abstract class MangaThemesia(
 
     open val altNamePrefix = "${intl["alt_names_heading"]} "
 
-    override fun mangaDetailsParse(document: Document) = SManga.create().apply {
+    override fun mangaDetailsParse(response: Response): SManga = mangaDetailsParse(response.asJsoup())
+
+    protected open fun mangaDetailsParse(document: Document) = SManga.create().apply {
         document.selectFirst(seriesDetailsSelector)?.let { seriesDetails ->
             title = seriesDetails.selectFirst(seriesTitleSelector)!!.text()
             artist = seriesDetails.selectFirst(seriesArtistSelector)?.ownText().removeEmptyPlaceholder()
@@ -268,9 +287,7 @@ abstract class MangaThemesia(
         }
     }
 
-    protected fun String?.removeEmptyPlaceholder(): String? {
-        return if (this.isNullOrBlank() || this == "-" || this == "N/A" || this == "n/a") null else this
-    }
+    protected fun String?.removeEmptyPlaceholder(): String? = if (this.isNullOrBlank() || (this == "-") || (this == "N/A") || (this == "n/a") || (this == "Unknown")) null else this
 
     open fun String?.parseStatus(): Int = when {
         this == null -> SManga.UNKNOWN
@@ -299,7 +316,7 @@ abstract class MangaThemesia(
     }
 
     // Chapter list
-    override fun chapterListSelector() = "div.bxcl li, div.cl li, #chapterlist li, ul li:has(div.chbox):has(div.eph-num)"
+    protected open fun chapterListSelector() = "div.bxcl li, div.cl li, #chapterlist li, ul li:has(div.chbox):has(div.eph-num)"
 
     override fun chapterListParse(response: Response): List<SChapter> {
         val document = response.asJsoup()
@@ -320,11 +337,9 @@ abstract class MangaThemesia(
         return chapters
     }
 
-    private fun parseUpdatedOnDate(date: String): Long {
-        return SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(date)?.time ?: 0L
-    }
+    private fun parseUpdatedOnDate(date: String): Long = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).parse(date)?.time ?: 0L
 
-    override fun chapterFromElement(element: Element) = SChapter.create().apply {
+    protected open fun chapterFromElement(element: Element) = SChapter.create().apply {
         val urlElements = element.select("a")
         setUrlWithoutDomain(urlElements.attr("href"))
         name = element.select(".lch a, .chapternum").text().ifBlank { urlElements.first()!!.text() }
@@ -343,7 +358,9 @@ abstract class MangaThemesia(
     // Pages
     open val pageSelector = "div#readerarea img"
 
-    override fun pageListParse(document: Document): List<Page> {
+    override fun pageListParse(response: Response): List<Page> = pageListParse(response.asJsoup())
+
+    protected open fun pageListParse(document: Document): List<Page> {
         countViews(document)
 
         val chapterUrl = document.location()
@@ -352,7 +369,9 @@ abstract class MangaThemesia(
             .mapIndexed { i, img -> Page(i, chapterUrl, img.imgAttr()) }
 
         // Some sites also loads pages via javascript
-        if (htmlPages.isNotEmpty()) { return htmlPages }
+        if (htmlPages.isNotEmpty()) {
+            return htmlPages
+        }
 
         val docString = document.toString()
         val imageListJson = JSON_IMAGE_LIST_REGEX.find(docString)?.destructured?.toList()?.get(0).orEmpty()
@@ -522,9 +541,7 @@ abstract class MangaThemesia(
 
     protected var genrelist: List<GenreData>? = null
 
-    protected open fun getGenreList(): List<Genre> {
-        return genrelist?.map { Genre(it.name, it.value, it.state) }.orEmpty()
-    }
+    protected open fun getGenreList(): List<Genre> = genrelist?.map { Genre(it.name, it.value, it.state) }.orEmpty()
 
     open val hasProjectPage = false
 
@@ -563,6 +580,7 @@ abstract class MangaThemesia(
     }
 
     // Helpers
+
     /**
      * Given some string which represents an http urlString, returns path for a manga
      * which can be used to fetch its details at "$baseUrl$mangaUrlDirectory/$mangaPath"
@@ -598,18 +616,14 @@ abstract class MangaThemesia(
         return null
     }
 
-    private fun pathLengthIs(url: HttpUrl, n: Int, strict: Boolean = false): Boolean {
-        return url.pathSegments.size == n && url.pathSegments[n - 1].isNotEmpty() ||
-            (!strict && url.pathSegments.size == n + 1 && url.pathSegments[n].isEmpty())
-    }
+    private fun pathLengthIs(url: HttpUrl, n: Int, strict: Boolean = false): Boolean = ((url.pathSegments.size == n) && (url.pathSegments[n - 1].isNotEmpty())) ||
+        (!strict && url.pathSegments.size == n + 1 && url.pathSegments[n].isEmpty())
 
-    protected open fun parseGenres(document: Document): List<GenreData>? {
-        return document.selectFirst("ul.genrez")?.select("li")?.map { li ->
-            GenreData(
-                li.selectFirst("label")!!.text(),
-                li.selectFirst("input[type=checkbox]")!!.attr("value"),
-            )
-        }
+    protected open fun parseGenres(document: Document): List<GenreData>? = document.selectFirst("ul.genrez")?.select("li")?.map { li ->
+        GenreData(
+            li.selectFirst("label")!!.text(),
+            li.selectFirst("input[type=checkbox]")!!.attr("value"),
+        )
     }
 
     protected open fun Element.imgAttr(): String = when {
@@ -622,15 +636,7 @@ abstract class MangaThemesia(
     protected open fun Elements.imgAttr(): String = this.first()!!.imgAttr()
 
     // Unused
-    override fun popularMangaSelector(): String = throw UnsupportedOperationException()
-    override fun popularMangaFromElement(element: Element): SManga = throw UnsupportedOperationException()
-    override fun popularMangaNextPageSelector(): String? = throw UnsupportedOperationException()
-
-    override fun latestUpdatesSelector(): String = throw UnsupportedOperationException()
-    override fun latestUpdatesFromElement(element: Element): SManga = throw UnsupportedOperationException()
-    override fun latestUpdatesNextPageSelector(): String? = throw UnsupportedOperationException()
-
-    override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
+    override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
     companion object {
         const val URL_SEARCH_PREFIX = "url:"

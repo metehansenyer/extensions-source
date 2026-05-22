@@ -20,31 +20,20 @@ class MangadexUrlActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pathSegments = intent?.data?.pathSegments
-        if (pathSegments != null && pathSegments.size > 1) {
-            val titleId = pathSegments[1]
-            val mainIntent = Intent().apply {
-                action = "eu.kanade.tachiyomi.SEARCH"
-                with(pathSegments[0]) {
-                    when {
-                        equals("chapter") -> putExtra("query", MDConstants.prefixChSearch + titleId)
-                        equals("group") -> putExtra("query", MDConstants.prefixGrpSearch + titleId)
-                        equals("user") -> putExtra("query", MDConstants.prefixUsrSearch + titleId)
-                        equals("author") -> putExtra("query", MDConstants.prefixAuthSearch + titleId)
-                        equals("list") -> putExtra("query", MDConstants.prefixListSearch + titleId)
-                        else -> putExtra("query", MDConstants.prefixIdSearch + titleId)
-                    }
-                }
-                putExtra("filter", packageName)
-            }
 
-            try {
-                startActivity(mainIntent)
-            } catch (e: ActivityNotFoundException) {
-                Log.e("MangadexUrlActivity", e.toString())
-            }
-        } else {
-            Log.e("MangadexUrlActivity", "Could not parse URI from intent $intent")
+        val mainIntent = Intent().apply {
+            action = "eu.kanade.tachiyomi.SEARCH"
+            putExtra("query", intent.data.toString())
+            putExtra("filter", packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            startActivity(mainIntent)
+        } catch (e: ActivityNotFoundException) {
+            Log.e("MangadexUrlActivity", "Activity not found: " + e.message)
+        } catch (e: Throwable) {
+            Log.e("MangadexUrlActivity", "Unexpected throwable: " + e.message)
         }
 
         finish()

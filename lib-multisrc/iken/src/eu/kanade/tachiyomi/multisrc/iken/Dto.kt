@@ -2,10 +2,10 @@ package eu.kanade.tachiyomi.multisrc.iken
 
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import keiyoushi.utils.tryParse
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import org.jsoup.Jsoup
-import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -17,18 +17,18 @@ class SearchResponse(
 
 @Serializable
 class Manga(
-    private val id: Int,
+    val id: Int,
     val slug: String,
     private val postTitle: String,
     private val postContent: String? = null,
-    val isNovel: Boolean,
+    val isNovel: Boolean = false,
     private val featuredImage: String? = null,
     private val alternativeTitles: String? = null,
     private val author: String? = null,
     private val artist: String? = null,
     private val seriesType: String? = null,
     private val seriesStatus: String? = null,
-    val genres: List<Genre> = emptyList(),
+    private val genres: List<Genre> = emptyList(),
 ) {
     fun toSManga() = SManga.create().apply {
         url = "$slug#$id"
@@ -36,29 +36,31 @@ class Manga(
         thumbnail_url = featuredImage
         author = this@Manga.author?.takeUnless { it.isEmpty() }
         artist = this@Manga.artist?.takeUnless { it.isEmpty() }
-        description = buildString {
-            postContent?.takeUnless { it.isEmpty() }?.let { desc ->
-                val tmpDesc = desc.replace("\n", "<br>")
-
-                append(Jsoup.parse(tmpDesc).text())
-            }
-            alternativeTitles?.takeUnless { it.isEmpty() }?.let { altName ->
-                append("\n\n")
-                append("Alternative Names: ")
-                append(altName)
-            }
-        }.trim()
+        description = getDescription(postContent)
         genre = getGenres()
-        status = when (seriesStatus) {
-            "ONGOING", "COMING_SOON" -> SManga.ONGOING
-            "COMPLETED" -> SManga.COMPLETED
-            "CANCELLED", "DROPPED" -> SManga.CANCELLED
-            else -> SManga.UNKNOWN
-        }
+        status = getStatus()
         initialized = true
     }
 
-    fun getGenres() = buildList {
+    fun getDescription(postContent: String?) = buildString {
+        postContent?.takeUnless { it.isEmpty() }?.let { desc ->
+            append(Jsoup.parse(desc.replace("\n", "<br>")).text())
+        }
+        alternativeTitles?.takeUnless { it.isEmpty() }?.let { altName ->
+            append("\n\n")
+            append("Alternative Names: ")
+            append(altName)
+        }
+    }.trim()
+
+    private fun getStatus() = when (seriesStatus) {
+        "ONGOING", "COMING_SOON" -> SManga.ONGOING
+        "COMPLETED" -> SManga.COMPLETED
+        "CANCELLED", "DROPPED" -> SManga.CANCELLED
+        else -> SManga.UNKNOWN
+    }
+
+    private fun getGenres() = buildList {
         when (seriesType) {
             "MANGA" -> add("Manga")
             "MANHUA" -> add("Manhua")
@@ -76,15 +78,23 @@ class Genre(
 )
 
 @Serializable
-class Name(val name: String)
+class DescriptionDto(
+    val description: String,
+)
 
 @Serializable
 class Post<T>(val post: T)
 
 @Serializable
+class RelatedMangaDto(
+    val recommendations: List<Manga>,
+)
+
+@Serializable
 class ChapterListResponse(
     val isNovel: Boolean = false,
     val slug: String? = null,
+    val id: Int? = null,
     val chapters: List<Chapter>,
 )
 
@@ -93,12 +103,13 @@ class Chapter(
     private val id: Int,
     private val slug: String,
     private val number: JsonPrimitive,
+    private val title: String? = null,
     private val createdAt: String,
     private val chapterStatus: String,
     private val isAccessible: Boolean,
     private val isLocked: Boolean? = false,
     private val isTimeLocked: Boolean? = false,
-    private val mangaPost: ChapterPostDetails,
+    private val mangaPost: MangaPostDto? = null,
 ) {
     fun isPublic() = chapterStatus == "PUBLIC"
 
@@ -108,20 +119,43 @@ class Chapter(
 
     fun toSChapter(mangaSlug: String?) = SChapter.create().apply {
         val prefix = if (!isAccessible()) "🔒 " else ""
-        val seriesSlug = mangaSlug ?: mangaPost.slug
+        val suffix = if (!title.isNullOrBlank()) " - $title" else ""
+        val seriesSlug = (mangaSlug ?: mangaPost?.slug)!!
         url = "/series/$seriesSlug/$slug#$id"
-        name = "${prefix}Chapter $number"
-        date_upload = try {
-            dateFormat.parse(createdAt)!!.time
-        } catch (_: ParseException) {
-            0L
-        }
+        name = "${prefix}Chapter $number$suffix"
+        date_upload = dateFormat.tryParse(createdAt)
     }
 }
 
 @Serializable
-class ChapterPostDetails(
-    val slug: String,
+class MangaPostDto(
+    val slug: String?,
+)
+
+@Serializable
+class PageResponse(
+    val chapter: Page,
+)
+
+@Serializable
+class PageParseDto(
+    val url: String,
+    val order: Int? = null,
+)
+
+@Serializable
+class Page(
+    val id: Int? = null,
+    val images: List<PageParseDto>,
+    val isPermanentlyLocked: Boolean = false,
+    val isLockedByCoins: Boolean = false,
+    val isShortLinkLocked: Boolean = false,
+)
+
+@Serializable
+class ViewQuery(
+    val postId: Int?,
+    val chapterId: Int?,
 )
 
 private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH)

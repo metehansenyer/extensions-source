@@ -5,6 +5,12 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
 class Data<T>(
@@ -44,12 +50,11 @@ class Constants(
         @SerialName("site_ids") val siteIds: List<Int>,
     )
 
-    fun getServer(isServers: String?, siteId: Int): ImageServer =
-        if (!isServers.isNullOrBlank() and (isServers != "auto")) {
-            imageServers.first { it.id == isServers && it.siteIds.contains(siteId) }
-        } else {
-            imageServers.first { it.siteIds.contains(siteId) }
-        }
+    fun getServer(isServers: String?, siteId: Int): ImageServer = if (!isServers.isNullOrBlank() and (isServers != "auto")) {
+        imageServers.first { (it.id == isServers) && it.siteIds.contains(siteId) }
+    } else {
+        imageServers.first { it.siteIds.contains(siteId) }
+    }
 
     fun getCategories(siteId: Int): List<IdLabelSiteType> = types.filter { it.siteIds.contains(siteId) }
     fun getFormats(siteId: Int): List<IdNameSiteType> = formats.filter { it.siteIds.contains(siteId) }
@@ -70,9 +75,7 @@ class MangasPageDto(
         @SerialName("has_next_page") val hasNextPage: Boolean,
     )
 
-    fun mapToSManga(isEng: String): List<SManga> {
-        return this.data.map { it.toSManga(isEng) }
-    }
+    fun mapToSManga(isEng: String): List<SManga> = this.data.map { it.toSManga(isEng) }
 }
 
 @Serializable
@@ -112,7 +115,7 @@ class Manga(
     val scanlateStatus: LabelType,
     @SerialName("is_licensed") val isLicensed: Boolean,
     val otherNames: List<String>,
-    val summary: String,
+    val summary: JsonElement,
 ) {
     @Serializable
     class LabelType(
@@ -139,33 +142,38 @@ class Manga(
         genre = type.label.ifBlank { "Манга" } + ", " + ageRestriction.label + ", " +
             genres.joinToString { it.name.trim() } + ", " + tags.joinToString { it.name.trim() }
         description = getOppositeLanguage(isEng, rusName, engName) + rating.average.parseAverage() + " " + rating.average +
-            " (голосов: " + rating.votes + ")\n" + otherNames.joinAltNames() + summary
+            " (голосов: " + rating.votes + ")\n" + otherNames.joinAltNames() + summary.parseSummary()
     }
 
-    private fun Float.parseAverage(): String {
-        return when {
-            this > 9.5 -> "★★★★★"
-            this > 8.5 -> "★★★★✬"
-            this > 7.5 -> "★★★★☆"
-            this > 6.5 -> "★★★✬☆"
-            this > 5.5 -> "★★★☆☆"
-            this > 4.5 -> "★★✬☆☆"
-            this > 3.5 -> "★★☆☆☆"
-            this > 2.5 -> "★✬☆☆☆"
-            this > 1.5 -> "★☆☆☆☆"
-            this > 0.5 -> "✬☆☆☆☆"
-            else -> "☆☆☆☆☆"
-        }
+    private fun Float.parseAverage(): String = when {
+        this > 9.5 -> "★★★★★"
+        this > 8.5 -> "★★★★✬"
+        this > 7.5 -> "★★★★☆"
+        this > 6.5 -> "★★★✬☆"
+        this > 5.5 -> "★★★☆☆"
+        this > 4.5 -> "★★✬☆☆"
+        this > 3.5 -> "★★☆☆☆"
+        this > 2.5 -> "★✬☆☆☆"
+        this > 1.5 -> "★☆☆☆☆"
+        this > 0.5 -> "✬☆☆☆☆"
+        else -> "☆☆☆☆☆"
     }
 
     private fun parseStatus(isLicensed: Boolean, statusTranslate: String, statusTitle: String): Int = when {
         isLicensed -> SManga.LICENSED
-        statusTranslate == "Завершён" && statusTitle == "Приостановлен" || statusTranslate == "Заморожен" || statusTranslate == "Заброшен" -> SManga.ON_HIATUS
-        statusTranslate == "Завершён" && statusTitle == "Выпуск прекращён" -> SManga.CANCELLED
-        statusTranslate == "Продолжается" -> SManga.ONGOING
-        statusTranslate == "Выходит" -> SManga.ONGOING
-        statusTranslate == "Завершён" -> SManga.COMPLETED
-        statusTranslate == "Вышло" -> SManga.PUBLISHING_FINISHED
+
+        ((statusTranslate == "Завершён") && (statusTitle == "Приостановлен")) || (statusTranslate == "Заморожен") || (statusTranslate == "Заброшен") -> SManga.ON_HIATUS
+
+        (statusTranslate == "Завершён") && (statusTitle == "Выпуск прекращён") -> SManga.CANCELLED
+
+        (statusTranslate == "Продолжается") -> SManga.ONGOING
+
+        (statusTranslate == "Выходит") -> SManga.ONGOING
+
+        (statusTranslate == "Завершён") -> SManga.COMPLETED
+
+        (statusTranslate == "Вышло") -> SManga.PUBLISHING_FINISHED
+
         else -> when (statusTitle) {
             "Онгоинг" -> SManga.ONGOING
             "Анонс" -> SManga.ONGOING
@@ -179,6 +187,45 @@ class Manga(
     private fun List<String>.joinAltNames(): String = when {
         this.isNotEmpty() -> "Альтернативные названия:\n" + this.joinToString(" / ") + "\n\n"
         else -> ""
+    }
+
+    // Try to parse summary as a plain text. If error return empty string or raw json string
+    private fun JsonElement?.parseSummary(): String = try {
+        this?.let { node ->
+            buildString {
+                extractTextFromNode(node, this)
+            }
+        }.orEmpty()
+    } catch (e: Exception) {
+        // Fallback to raw JSON if parsing fails
+        this?.toString().orEmpty()
+    }
+
+    private fun extractTextFromNode(node: JsonElement, result: StringBuilder) {
+        when (node) {
+            is JsonObject -> {
+                val type = node["type"]?.jsonPrimitive?.content
+
+                when (type) {
+                    "text" -> node["text"]?.jsonPrimitive?.content?.let { result.append(it) }
+                    "hardBreak" -> result.append("\n")
+                    "paragraph" -> {
+                        node["content"]?.jsonArray?.forEach { child ->
+                            extractTextFromNode(child, result)
+                        }
+                        result.append("\n")
+                    }
+                    // Recurse into content array for other node types
+                    else -> {
+                        node["content"]?.jsonArray?.forEach { child ->
+                            extractTextFromNode(child, result)
+                        }
+                    }
+                }
+            }
+            is JsonArray -> node.forEach { extractTextFromNode(it, result) }
+            is JsonPrimitive -> result.append(node.content)
+        }
     }
 }
 
@@ -208,6 +255,7 @@ class Chapter(
         @SerialName("branch_id") val branchId: Int?,
         @SerialName("created_at") val createdAt: String,
         val teams: List<Team>,
+        @SerialName("restricted_view") val restrictedView: RestrictedView?,
         val user: User,
     ) {
         @Serializable
@@ -216,31 +264,38 @@ class Chapter(
         )
 
         @Serializable
+        class RestrictedView(
+            @SerialName("is_open") val isOpen: Boolean,
+        )
+
+        @Serializable
         class User(
             val username: String,
         )
     }
 
-    private fun first(branchId: Int? = null): Branch? {
-        return runCatching { if (branchId != null) branches.first { it.branchId == branchId } else branches.first() }.getOrNull()
-    }
+    private fun first(branchId: Int? = null): Branch? = runCatching { if (branchId != null) branches.first { it.branchId == branchId } else branches.first() }.getOrNull()
 
-    private fun getTeamName(branchId: Int? = null): String? {
-        return runCatching { first(branchId)!!.teams.first().name }.getOrNull()
-    }
+    private fun getTeamName(branchId: Int? = null): String? = runCatching { first(branchId)!!.teams.first().name }.getOrNull()
 
-    private fun getUserName(branchId: Int? = null): String? {
-        return runCatching { first(branchId)!!.user.username }.getOrNull()
-    }
+    private fun getUserName(branchId: Int? = null): String? = runCatching { first(branchId)!!.user.username }.getOrNull()
 
-    fun toSChapter(slugUrl: String, branchId: Int? = null, isScanUser: Boolean): SChapter = SChapter.create().apply {
-        val chapterName = "Том $volume. Глава $number"
-        name = if (this@Chapter.name.isNullOrBlank()) chapterName else "$chapterName - ${this@Chapter.name}"
-        val branchStr = if (branchId != null) "&branch_id=$branchId" else ""
-        url = "/$slugUrl/chapter?$branchStr&volume=$volume&number=$number"
-        scanlator = getTeamName(branchId) ?: if (isScanUser) getUserName(branchId) else null
-        date_upload = runCatching { LibGroup.simpleDateFormat.parse(first(branchId)!!.createdAt)!!.time }.getOrDefault(0L)
-        chapter_number = number.toFloat()
+    private fun getIsMangaOpen(branchId: Int? = null, defaultValue: Boolean = true): Boolean = first(branchId)?.restrictedView?.isOpen ?: defaultValue
+
+    fun toSChapter(slugUrl: String, branchId: Int? = null, isScanUser: Boolean, showPaidChapter: Boolean = false): SChapter? {
+        // Return empty SChapter if manga is not open (restricted)
+        if (!showPaidChapter && !getIsMangaOpen(branchId)) return null
+
+        return SChapter.create().apply {
+            val paidChapterTitle = if (!getIsMangaOpen(branchId)) "$$ " else ""
+            val chapterName = paidChapterTitle + "Том $volume. Глава $number"
+            name = if (this@Chapter.name.isNullOrBlank()) chapterName else "$chapterName - ${this@Chapter.name}"
+            val branchStr = if (branchId != null) "&branch_id=$branchId" else ""
+            url = "/$slugUrl/chapter?$branchStr&volume=$volume&number=$number"
+            scanlator = getTeamName(branchId) ?: if (isScanUser) getUserName(branchId) else null
+            date_upload = runCatching { LibGroup.simpleDateFormat.parse(first(branchId)!!.createdAt)!!.time }.getOrDefault(0L)
+            chapter_number = number.toFloat()
+        }
     }
 }
 

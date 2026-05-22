@@ -2,9 +2,9 @@ ext {
     extName = 'MangaGezgini'
     extClass = '.MangaGezgini'
     themePkg = 'madara'
-    baseUrl = 'https://mangagezgini.love'
-    overrideVersionCode = 0
+    baseUrl = 'https://mangagezgini.online'
+    overrideVersionCode = 9
     isNsfw = false
 }
 
-apply from: "$rootDir/common.gradle"
+apply plugin: "kei.plugins.extension.legacy"

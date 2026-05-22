@@ -9,8 +9,9 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
-import eu.kanade.tachiyomi.source.online.ParsedHttpSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.tryParse
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -22,7 +23,6 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import rx.Observable
-import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -33,12 +33,31 @@ abstract class MadTheme(
     override val baseUrl: String,
     override val lang: String,
     private val dateFormat: SimpleDateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.ENGLISH),
-) : ParsedHttpSource() {
+) : HttpSource() {
 
     override val supportsLatest = true
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
         .rateLimit(1, 1, TimeUnit.SECONDS)
+        // Intercepts chapter image requests that have a fallback URL encoded in the fragment.
+        // If the primary CDN returns a failure, we retry with the fallback URL.
+        // The fallback is encoded as a fragment so the parser doesn't need to pre-decide
+        // which URL to use — the network layer handles it transparently.
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val fragment = request.url.fragment
+
+            if (fragment != null && (fragment.startsWith("https://") || fragment.startsWith("http://"))) {
+                val cleanUrl = request.url.newBuilder().fragment(null).build()
+                val response = chain.proceed(request.newBuilder().url(cleanUrl).build())
+                if (!response.isSuccessful) {
+                    response.close()
+                    return@addInterceptor chain.proceed(request.newBuilder().url(fragment).build())
+                }
+                return@addInterceptor response
+            }
+            chain.proceed(request)
+        }
         .addInterceptor { chain ->
             val request = chain.request()
             val url = request.url
@@ -62,7 +81,7 @@ abstract class MadTheme(
 
     // TODO: better cookie sharing
     // TODO: don't count cached responses against rate limit
-    private val chapterClient: OkHttpClient = network.cloudflareClient.newBuilder()
+    private val chapterClient: OkHttpClient = network.client.newBuilder()
         .rateLimit(1, 12, TimeUnit.SECONDS)
         .build()
 
@@ -72,39 +91,20 @@ abstract class MadTheme(
 
     private var genreKey = "genre[]"
 
-    // Popular
-    override fun popularMangaRequest(page: Int): Request =
-        searchMangaRequest(page, "", FilterList(OrderFilter(0)))
+    // ============================== Popular ==============================
 
-    override fun popularMangaParse(response: Response): MangasPage =
-        searchMangaParse(response)
+    override fun popularMangaRequest(page: Int): Request = searchMangaRequest(page, "", FilterList(OrderFilter(0)))
 
-    override fun popularMangaSelector(): String =
-        searchMangaSelector()
+    override fun popularMangaParse(response: Response): MangasPage = searchMangaParse(response)
 
-    override fun popularMangaFromElement(element: Element): SManga =
-        searchMangaFromElement(element)
+    // ============================== Latest ===============================
 
-    override fun popularMangaNextPageSelector(): String? =
-        searchMangaNextPageSelector()
+    override fun latestUpdatesRequest(page: Int): Request = searchMangaRequest(page, "", FilterList(OrderFilter(1)))
 
-    // Latest
-    override fun latestUpdatesRequest(page: Int): Request =
-        searchMangaRequest(page, "", FilterList(OrderFilter(1)))
+    override fun latestUpdatesParse(response: Response): MangasPage = searchMangaParse(response)
 
-    override fun latestUpdatesParse(response: Response): MangasPage =
-        searchMangaParse(response)
+    // ============================== Search ===============================
 
-    override fun latestUpdatesSelector(): String =
-        searchMangaSelector()
-
-    override fun latestUpdatesFromElement(element: Element): SManga =
-        searchMangaFromElement(element)
-
-    override fun latestUpdatesNextPageSelector(): String? =
-        searchMangaNextPageSelector()
-
-    // Search
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val url = "$baseUrl/search".toHttpUrl().newBuilder()
             .addQueryParameter("q", query)
@@ -121,12 +121,15 @@ abstract class MadTheme(
                             }
                         }
                 }
+
                 is StatusFilter -> {
                     url.addQueryParameter("status", filter.toUriPart())
                 }
+
                 is OrderFilter -> {
                     url.addQueryParameter("sort", filter.toUriPart())
                 }
+
                 else -> {}
             }
         }
@@ -134,10 +137,26 @@ abstract class MadTheme(
         return GET(url.build(), headers)
     }
 
-    override fun searchMangaSelector(): String = ".book-detailed-item"
+    override fun searchMangaParse(response: Response): MangasPage {
+        val document = response.asJsoup()
+        if (genresList == null) {
+            genresList = parseGenres(document)
+        }
 
-    override fun searchMangaFromElement(element: Element): SManga = SManga.create().apply {
-        setUrlWithoutDomain(element.selectFirst("a")!!.attr("abs:href"))
+        val mangas = document.select(searchMangaSelector()).map { element ->
+            searchMangaFromElement(element)
+        }
+        val hasNextPage = searchMangaNextPageSelector()?.let { selector ->
+            document.selectFirst(selector) != null
+        } ?: false
+
+        return MangasPage(mangas, hasNextPage)
+    }
+
+    open fun searchMangaSelector(): String = ".book-detailed-item"
+
+    open fun searchMangaFromElement(element: Element): SManga = SManga.create().apply {
+        setUrlWithoutDomain(element.selectFirst("a")!!.absUrl("href"))
         title = element.selectFirst("a")!!.attr("title")
         element.selectFirst(".summary")?.text()?.let { description = it }
         element.select(".genres > *").joinToString { it.text() }.takeIf { it.isNotEmpty() }?.let { genre = it }
@@ -148,34 +167,44 @@ abstract class MadTheme(
      * Only some sites use the next/previous buttons, so instead we check for the next link
      * after the active one. We use the :not() selector to exclude the optional next button
      */
-    override fun searchMangaNextPageSelector(): String? = ".paginator > a.active + a:not([rel=next])"
+    open fun searchMangaNextPageSelector(): String? = ".paginator > a.active + a:not([rel=next])"
 
-    // Details
-    override fun mangaDetailsParse(document: Document): SManga = SManga.create().apply {
-        title = document.selectFirst(".detail h1")!!.text()
-        author = document.select(".detail .meta > p > strong:contains(Authors) ~ a").joinToString { it.text().trim(',', ' ') }
-        genre = document.select(".detail .meta > p > strong:contains(Genres) ~ a").joinToString { it.text().trim(',', ' ') }
-        thumbnail_url = document.selectFirst("#cover img")!!.attr("abs:data-src") + "#image-request"
+    // ============================== Details ==============================
 
-        val altNames = document.selectFirst(".detail h2")?.text()
-            ?.split(',', ';')
-            ?.mapNotNull { it.trim().takeIf { it != title } }
-            ?: listOf()
+    override fun mangaDetailsParse(response: Response): SManga {
+        val document = response.asJsoup()
+        return SManga.create().apply {
+            title = document.selectFirst(".detail h1")!!.text()
+            author = document.select(".detail .meta > p > strong:contains(Authors) ~ a").joinToString { it.text().trim(',', ' ') }
+            genre = document.select(".detail .meta > p > strong:contains(Genres) ~ a").joinToString { it.text().trim(',', ' ') }
+            thumbnail_url = document.selectFirst("#cover img")!!.attr("abs:data-src") + "#image-request"
 
-        description = document.select(".summary .content, .summary .content ~ p").text() +
-            (altNames.takeIf { it.isNotEmpty() }?.let { "\n\nAlt name(s): ${it.joinToString()}" } ?: "")
+            val altNames = document.selectFirst(".detail h2")?.text()
+                ?.split(',', ';')
+                ?.mapNotNull { it.trim().takeIf { it != title && it.isNotEmpty() } }
+                ?: emptyList()
 
-        val statusText = document.selectFirst(".detail .meta > p > strong:contains(Status) ~ a")!!.text()
-        status = when (statusText.lowercase(Locale.ENGLISH)) {
-            "ongoing" -> SManga.ONGOING
-            "completed" -> SManga.COMPLETED
-            "on-hold" -> SManga.ON_HIATUS
-            "canceled" -> SManga.CANCELLED
-            else -> SManga.UNKNOWN
+            description = buildString {
+                append(document.select(".summary .content, .summary .content ~ p").text())
+                if (altNames.isNotEmpty()) {
+                    append("\n\nAlt name(s): ")
+                    append(altNames.joinToString())
+                }
+            }
+
+            val statusText = document.selectFirst(".detail .meta > p > strong:contains(Status) ~ a")!!.text()
+            status = when (statusText.lowercase(Locale.ENGLISH)) {
+                "ongoing" -> SManga.ONGOING
+                "completed" -> SManga.COMPLETED
+                "on-hold" -> SManga.ON_HIATUS
+                "canceled" -> SManga.CANCELLED
+                else -> SManga.UNKNOWN
+            }
         }
     }
 
-    // Chapters
+    // ============================= Chapters ==============================
+
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> {
         // API is heavily rate limited. Use custom client
         return if (manga.status != SManga.LICENSED) {
@@ -189,17 +218,40 @@ abstract class MadTheme(
         }
     }
 
-    override fun chapterListParse(response: Response): List<SChapter> {
-        if (response.request.url.fragment == "idFound") {
-            return super.chapterListParse(response)
+    override fun chapterListRequest(manga: SManga): Request {
+        val mangaId = MANGA_ID_REGEX.find(manga.url)?.groupValues?.get(1)
+
+        if (useLegacyApi) {
+            val url = mangaId?.let {
+                "$baseUrl/service/backend/chaplist/".toHttpUrl().newBuilder()
+                    .addQueryParameter("manga_id", it)
+                    .addQueryParameter("manga_name", manga.title)
+                    .build()
+                    .toString()
+            } ?: (baseUrl + manga.url)
+
+            return GET(url, headers)
         }
 
-        val document = response.asJsoup()
+        val mangaSlug = manga.url.substringAfterLast("/").substringBefore("?")
+        val targetPath = if (useSlugSearch) mangaSlug else mangaId
 
-        val script = document.selectFirst("script:containsData(bookId)")
-            ?: throw Exception("Cannot find script")
-        val bookId = script.data().substringAfter("bookId = ").substringBefore(";")
-        val bookSlug = script.data().substringAfter("bookSlug = \"").substringBefore("\";")
+        if (!targetPath.isNullOrEmpty()) {
+            return GET(buildChapterUrl(mangaId.orEmpty(), mangaSlug), headers)
+        }
+
+        return GET(baseUrl + manga.url, headers)
+    }
+
+    override fun chapterListParse(response: Response): List<SChapter> {
+        val document = response.asJsoup()
+        val requestUrl = response.request.url.toString()
+
+        if (requestUrl.contains("/api/manga/") || requestUrl.contains("/service/backend/chaplist/")) {
+            return document.select(chapterListSelector())
+                .map { chapterFromElement(it) }
+                .distinctBy { it.url }
+        }
 
         var chaptersList = document.select(chapterListSelector()).map { chapterFromElement(it) }
 
@@ -208,8 +260,13 @@ abstract class MadTheme(
             ?: false
 
         if (fetchApi) {
+            val script = document.selectFirst("script:containsData(bookId)")
+                ?: throw Exception("Cannot find script")
+            val bookId = script.data().substringAfter("bookId = ").substringBefore(";")
+            val bookSlug = script.data().substringAfter("bookSlug = \"").substringBefore("\";")
+
             val apiChapters = client.newCall(GET(buildChapterUrl(bookId, bookSlug), headers)).execute()
-                .asJsoup().select(chapterListSelector()).map { chapterFromElement(it) }
+                .use { it.asJsoup().select(chapterListSelector()).map { element -> chapterFromElement(element) } }
 
             val cutIndex = chaptersList.indexOfFirst { chapter ->
                 apiChapters.any { it.url == chapter.url }
@@ -218,63 +275,37 @@ abstract class MadTheme(
             chaptersList = (chaptersList.subList(0, cutIndex) + apiChapters)
         }
 
-        return chaptersList
+        // distinctBy acts as a foolproof safeguard against any malformed URLs that fail to merge properly
+        return chaptersList.distinctBy { it.url }
     }
 
-    private fun buildChapterUrl(mangaId: String, mangaSlug: String): HttpUrl {
-        return baseUrl.toHttpUrl().newBuilder().apply {
-            addPathSegment("api")
-            addPathSegment("manga")
-            addPathSegment(if (useSlugSearch) mangaSlug else mangaId)
-            addPathSegment("chapters")
-            addQueryParameter("source", "detail")
-        }.build()
-    }
+    open fun chapterListSelector(): String = "#chapter-list > li"
 
-    override fun chapterListRequest(manga: SManga): Request {
-        if (useLegacyApi) {
-            val mangaId = MANGA_ID_REGEX.find(manga.url)?.groupValues?.get(1)
-            val url = mangaId?.let {
-                "$baseUrl/service/backend/chaplist/".toHttpUrl().newBuilder()
-                    .addQueryParameter("manga_id", it)
-                    .addQueryParameter("manga_name", manga.title)
-                    .fragment("idFound")
-                    .build()
-                    .toString()
-            } ?: (baseUrl + manga.url)
-
-            return GET(url, headers)
-        }
-        return GET(baseUrl + manga.url, headers)
-    }
-
-    override fun searchMangaParse(response: Response): MangasPage {
-        if (genresList == null) {
-            genresList = parseGenres(response.asJsoup(response.peekBody(Long.MAX_VALUE).string()))
-        }
-        return super.searchMangaParse(response)
-    }
-
-    override fun chapterListSelector(): String = "#chapter-list > li"
-
-    override fun chapterFromElement(element: Element): SChapter = SChapter.create().apply {
+    open fun chapterFromElement(element: Element): SChapter = SChapter.create().apply {
         // Not using setUrlWithoutDomain() to support external chapters
-        url = element.selectFirst("a")!!
-            .absUrl("href")
-            .removePrefix(baseUrl)
+        val rawUrl = element.selectFirst("a")!!.absUrl("href")
+
+        // Strip the baseUrl and heavily normalize double slashes to prevent duplicate mismatching
+        url = if (rawUrl.startsWith(baseUrl)) {
+            rawUrl.substringAfter(baseUrl).replace(Regex("/{2,}"), "/")
+        } else {
+            rawUrl
+        }
 
         name = element.selectFirst(".chapter-title")!!.text()
         date_upload = parseChapterDate(element.selectFirst(".chapter-update")?.text())
     }
 
-    // Pages
-    override fun pageListParse(document: Document): List<Page> {
+    // =============================== Pages ===============================
+
+    override fun pageListParse(response: Response): List<Page> {
+        val document = response.asJsoup()
         val mangaId = MANGA_ID_REGEX.find(document.location())?.groupValues?.get(1)
         val chapterId = CHAPTER_ID_REGEX.find(document.html())?.groupValues?.get(1)
 
         val html = if (mangaId != null && chapterId != null) {
             val url = GET("$baseUrl/service/backend/chapterServer/?server_id=1&chapter_id=$chapterId", headers)
-            client.newCall(url).execute().body.string()
+            client.newCall(url).execute().use { it.body.string() }
         } else {
             document.html()
         }
@@ -298,13 +329,13 @@ abstract class MadTheme(
                 // we've got no choice but to fallback to chapter images from HTML.
                 // TODO: This might need to be solved one day ^
                 if (chapterImagesFromJs.all { e ->
-                    e.startsWith("http://") || e.startsWith("https://")
-                }
+                        e.startsWith("http://") || e.startsWith("https://")
+                    }
                 ) {
                     // Great, we can use these.
                     if (chapterImagesFromHtml.count() < chapterImagesFromJs.count()) {
                         // Seems like we've hit such a host, let's use the images we've obtained
-                        // from the javascript string.
+                        // from the JavaScript string.
                         return chapterImagesFromJs.mapIndexed { index, path ->
                             Page(index, imageUrl = path)
                         }
@@ -314,7 +345,7 @@ abstract class MadTheme(
 
             // No fancy CDN, all images are available directly in <img> tags (hopefully)
             return chapterImagesFromHtml.mapIndexed { index, element ->
-                Page(index, imageUrl = element.attr("abs:data-src"))
+                Page(index, imageUrl = element.resolveImageUrl())
             }
         }
 
@@ -334,34 +365,117 @@ abstract class MadTheme(
         }
     }
 
-    // Image
-    override fun pageListRequest(chapter: SChapter): Request {
-        return if (chapter.url.toHttpUrlOrNull() != null) {
-            // External chapter
-            GET(chapter.url, headers)
-        } else {
-            super.pageListRequest(chapter)
+    override fun pageListRequest(chapter: SChapter): Request = if (chapter.url.toHttpUrlOrNull() != null) {
+        // External chapter
+        GET(chapter.url, headers)
+    } else {
+        super.pageListRequest(chapter)
+    }
+
+    override fun imageRequest(page: Page): Request = GET("${page.imageUrl}#image-request", headers)
+
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
+
+    // ============================== Filters ==============================
+
+    override fun getFilterList() = FilterList(
+        // TODO: Filters for sites that support it:
+        // excluded genres
+        // genre inclusion mode
+        // bookmarks
+        // author
+        GenreFilter(getGenreList()),
+        StatusFilter(),
+        OrderFilter(),
+    )
+
+    private class GenreFilter(genres: List<Genre>) : Filter.Group<Genre>("Genres", genres)
+    private class Genre(name: String, val id: String) : Filter.CheckBox(name)
+    private var genresList: List<Genre>? = null
+    private fun getGenreList(): List<Genre> {
+        // Filters are fetched immediately once an extension loads
+        // We're only able to get filters after a loading the manga directory, and resetting
+        // the filters is the only thing that seems to reinflate the view
+        return genresList ?: listOf(Genre("Press reset to attempt to fetch genres", ""))
+    }
+
+    class StatusFilter :
+        UriPartFilter(
+            "Status",
+            arrayOf(
+                Pair("All", "all"),
+                Pair("Ongoing", "ongoing"),
+                Pair("Completed", "completed"),
+            ),
+        )
+
+    class OrderFilter(state: Int = 0) :
+        UriPartFilter(
+            "Order By",
+            arrayOf(
+                Pair("Views", "views"),
+                Pair("Updated", "updated_at"),
+                Pair("Created", "created_at"),
+                Pair("Name A-Z", "name"),
+                // Pair("Number of Chapters", "total_chapters"),
+                Pair("Rating", "rating"),
+            ),
+            state,
+        )
+
+    open class UriPartFilter(
+        displayName: String,
+        private val vals: Array<Pair<String, String>>,
+        state: Int = 0,
+    ) : Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
+        fun toUriPart() = vals[state].second
+    }
+
+    // ============================= Utilities =============================
+
+    private fun buildChapterUrl(mangaId: String, mangaSlug: String): HttpUrl = baseUrl.toHttpUrl().newBuilder().apply {
+        addPathSegment("api")
+        addPathSegment("manga")
+        addPathSegment(if (useSlugSearch) mangaSlug else mangaId)
+        addPathSegment("chapters")
+        addQueryParameter("source", "detail")
+    }.build()
+
+    /**
+     * Resolves the best available image URL from a chapter image element.
+     *
+     * For all images, we attempt to extract the site's own onerror fallback URL and
+     * encode it as the fragment (mainUrl#fallbackUrl). The OkHttp interceptor will
+     * then transparently retry with the fallback if the primary request fails.
+     *
+     * For known broken CDN servers (currently s20), the onerror fallback is returned
+     * as the primary URL directly — no point trying s20 at all.
+     *
+     * Note: the fallback URL has a different path structure than data-src
+     * (it omits the /toonily/ path segment), so we cannot simply swap the domain —
+     * we must extract it from the onerror attribute directly.
+     *
+     * Example:
+     *   data-src → https://s20.toonilycdnv2.xyz/toonily/manga/.../page.jpg
+     *   onerror  → //sb.toonilycdnv2.xyz/manga/.../page.jpg?v=1  (different path!)
+     */
+    private fun Element.resolveImageUrl(): String {
+        val dataSrc = attr("abs:data-src")
+        val raw = attr("onerror")
+            .substringAfter("this.src='", "")
+            .substringBefore("'")
+        val fallback = when {
+            raw.startsWith("https://") || raw.startsWith("http://") -> raw
+            raw.startsWith("//") -> "https:$raw"
+            else -> return dataSrc // no onerror available, use data-src as-is
         }
+        // For known broken servers, use the fallback as the primary URL directly.
+        // For everything else, encode fallback as fragment for the interceptor to retry with on failure.
+        return if ("://s20." in dataSrc) fallback else "$dataSrc#$fallback"
     }
 
-    override fun imageRequest(page: Page): Request {
-        return GET("${page.imageUrl}#image-request", headers)
-    }
-
-    override fun imageUrlParse(document: Document): String =
-        throw UnsupportedOperationException()
-
-    // Date logic lifted from Madara
     private fun parseChapterDate(date: String?): Long {
         date ?: return 0
-
-        fun SimpleDateFormat.tryParse(string: String): Long {
-            return try {
-                parse(string)?.time ?: 0
-            } catch (_: ParseException) {
-                0
-            }
-        }
 
         return when {
             " ago" in date -> {
@@ -387,66 +501,11 @@ abstract class MadTheme(
     }
 
     // Dynamic genres
-    private fun parseGenres(document: Document): List<Genre>? {
-        return document.selectFirst(".checkbox-group.genres")?.select(".checkbox-wrapper")?.run {
-            firstOrNull()?.selectFirst("input")?.attr("name")?.takeIf { it.isNotEmpty() }?.let { genreKey = it }
-            map {
-                Genre(it.selectFirst(".radio__label")!!.text(), it.selectFirst("input")!!.`val`())
-            }
+    private fun parseGenres(document: Document): List<Genre>? = document.selectFirst(".checkbox-group.genres")?.select(".checkbox-wrapper")?.run {
+        firstOrNull()?.selectFirst("input")?.attr("name")?.takeIf { it.isNotEmpty() }?.let { genreKey = it }
+        map {
+            Genre(it.selectFirst(".radio__label")!!.text(), it.selectFirst("input")!!.`val`())
         }
-    }
-
-    // Filters
-    override fun getFilterList() = FilterList(
-        // TODO: Filters for sites that support it:
-        // excluded genres
-        // genre inclusion mode
-        // bookmarks
-        // author
-        GenreFilter(getGenreList()),
-        StatusFilter(),
-        OrderFilter(),
-    )
-
-    private class GenreFilter(genres: List<Genre>) : Filter.Group<Genre>("Genres", genres)
-    private class Genre(name: String, val id: String) : Filter.CheckBox(name)
-    private var genresList: List<Genre>? = null
-    private fun getGenreList(): List<Genre> {
-        // Filters are fetched immediately once an extension loads
-        // We're only able to get filters after a loading the manga directory, and resetting
-        // the filters is the only thing that seems to reinflate the view
-        return genresList ?: listOf(Genre("Press reset to attempt to fetch genres", ""))
-    }
-
-    class StatusFilter : UriPartFilter(
-        "Status",
-        arrayOf(
-            Pair("All", "all"),
-            Pair("Ongoing", "ongoing"),
-            Pair("Completed", "completed"),
-        ),
-    )
-
-    class OrderFilter(state: Int = 0) : UriPartFilter(
-        "Order By",
-        arrayOf(
-            Pair("Views", "views"),
-            Pair("Updated", "updated_at"),
-            Pair("Created", "created_at"),
-            Pair("Name A-Z", "name"),
-            // Pair("Number of Chapters", "total_chapters"),
-            Pair("Rating", "rating"),
-        ),
-        state,
-    )
-
-    open class UriPartFilter(
-        displayName: String,
-        private val vals: Array<Pair<String, String>>,
-        state: Int = 0,
-    ) :
-        Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
-        fun toUriPart() = vals[state].second
     }
 
     companion object {

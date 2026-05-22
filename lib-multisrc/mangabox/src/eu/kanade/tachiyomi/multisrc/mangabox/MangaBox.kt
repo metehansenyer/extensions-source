@@ -2,8 +2,14 @@ package eu.kanade.tachiyomi.multisrc.mangabox
 
 import android.annotation.SuppressLint
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import androidx.preference.CheckBoxPreference
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
+import eu.kanade.tachiyomi.multisrc.mangabox.imagesize.ImageSize
+import eu.kanade.tachiyomi.multisrc.mangabox.imagesize.WebpSizeGetter
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -12,22 +18,29 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
-import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.utils.getPreferencesLazy
+import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.Buffer
 import okio.IOException
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.CountDownLatch
 import java.util.regex.Pattern
 
 abstract class MangaBox(
@@ -35,23 +48,26 @@ abstract class MangaBox(
     private val mirrorEntries: Array<String>,
     override val lang: String,
     private val dateFormat: SimpleDateFormat = SimpleDateFormat(
-        "MMM-dd-yyyy HH:mm",
+        "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'",
         Locale.ENGLISH,
     ).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     },
-) : ParsedHttpSource(), ConfigurableSource {
+) : ParsedHttpSource(),
+    ConfigurableSource {
 
     override val supportsLatest = true
 
     override val baseUrl: String get() = mirror
 
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    override val client: OkHttpClient = network.client.newBuilder()
+        .addInterceptor(::mergeImagesInterceptor)
         .addInterceptor(::useAltCdnInterceptor)
         .build()
 
-    private fun SharedPreferences.getMirrorPref(): String =
-        getString(PREF_USE_MIRROR, mirrorEntries[0])!!
+    private fun SharedPreferences.getMirrorPref(): String = getString(PREF_USE_MIRROR, mirrorEntries[0])!!
+
+    private fun SharedPreferences.getMergeImagesPref(): Boolean = getBoolean(PREF_MERGE_IMAGES, false)
 
     private val preferences: SharedPreferences by getPreferencesLazy {
         // if current mirror is not in mirrorEntries, set default
@@ -70,18 +86,83 @@ abstract class MangaBox(
             return field
         }
 
+    private var mergeImages: Boolean? = null
+        get() {
+            if (field != null) {
+                return field
+            }
+
+            field = preferences.getMergeImagesPref()
+            return field
+        }
+
+    private val apiChapterListUrl: String
+        get() = "$baseUrl/api/manga/__SLUG__/chapters"
+
+    private val apiChapterPageUrl: String
+        get() = "$baseUrl/manga/__MANGA__/__CHAPTER__"
+
     private val cdnSet =
         MangaBoxLinkedCdnSet() // Stores all unique CDNs that the extension can use to retrieve chapter images
 
     private class MangaBoxFallBackTag // Custom empty class tag to use as an identifier that the specific request is fallback-able
 
-    private fun HttpUrl.getBaseUrl(): String =
-        "${URL_PREFIX}${this.host}${
+    private fun HttpUrl.getBaseUrl(): String = "${URL_PREFIX}${this.host}${
         when (this.port) {
             80, 443 -> ""
             else -> ":${this.port}"
         }
-        }"
+    }"
+
+    private fun mergeImagesInterceptor(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val url = request.url
+
+        if (url.toString().startsWith("https://127.0.0.1/merge?")) {
+            val w = url.queryParameter("w")!!.toInt()
+            val h = url.queryParameter("h")!!.toInt()
+
+            val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+
+            try {
+                val canvas = Canvas(result)
+
+                val length = url.queryParameter("length")!!.toInt()
+
+                var yOffset = 0
+
+                for (i in 0..<length) {
+                    val url = url.queryParameter(i.toString())!!
+                    val bitmap = BitmapFactory.decodeStream(
+                        chain
+                            .proceed(request.newBuilder().url(url).build())
+                            .body
+                            .byteStream(),
+                    )
+                    canvas.drawBitmap(bitmap, 0f, yOffset.toFloat(), null)
+                    yOffset += bitmap.height
+                    bitmap.recycle()
+                }
+
+                return Response.Builder().body(
+                    Buffer()
+                        .also {
+                            result.compress(Bitmap.CompressFormat.WEBP, 100, it.outputStream())
+                        }
+                        .asResponseBody("image/webp".toMediaType()),
+                )
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_0)
+                    .code(200)
+                    .message("")
+                    .build()
+            } finally {
+                result.recycle()
+            }
+        } else {
+            return chain.proceed(request)
+        }
+    }
 
     private fun useAltCdnInterceptor(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -157,33 +238,26 @@ abstract class MangaBox(
 
     override fun popularMangaSelector() = "div.truyen-list > div.list-truyen-item-wrap, div.comic-list > .list-comic-item-wrap"
 
-    override fun popularMangaRequest(page: Int): Request {
-        return GET("$baseUrl/$popularUrlPath$page", headers)
-    }
+    override fun popularMangaRequest(page: Int): Request = GET("$baseUrl/$popularUrlPath$page", headers)
 
     override fun latestUpdatesSelector() = popularMangaSelector()
 
-    override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/$latestUrlPath$page", headers)
-    }
+    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/$latestUrlPath$page", headers)
 
-    private fun mangaFromElement(element: Element, urlSelector: String = "h3 a"): SManga {
-        return SManga.create().apply {
-            element.select(urlSelector).first()!!.let {
-                url = it.attr("abs:href")
-                    .substringAfter(baseUrl) // intentionally not using setUrlWithoutDomain
-                title = it.text()
-            }
-            thumbnail_url = element.select("img").first()!!.attr("abs:src")
+    private fun mangaFromElement(element: Element, urlSelector: String = "h3 a"): SManga = SManga.create().apply {
+        element.select(urlSelector).first()!!.let {
+            url = it.attr("abs:href")
+                .substringAfter(baseUrl) // intentionally not using setUrlWithoutDomain
+            title = it.text()
         }
+        thumbnail_url = element.select("img").first()!!.attr("abs:src")
     }
 
     override fun popularMangaFromElement(element: Element): SManga = mangaFromElement(element)
 
     override fun latestUpdatesFromElement(element: Element): SManga = mangaFromElement(element)
 
-    override fun popularMangaNextPageSelector() =
-        "div.group_page, div.group-page a:not([href]) + a:not(:contains(Last))"
+    override fun popularMangaNextPageSelector() = "div.group_page, div.group-page a:not([href]) + a:not(:contains(Last))"
 
     override fun latestUpdatesNextPageSelector() = popularMangaNextPageSelector()
 
@@ -215,8 +289,7 @@ abstract class MangaBox(
 
     override fun searchMangaFromElement(element: Element) = mangaFromElement(element)
 
-    override fun searchMangaNextPageSelector() =
-        "a.page_select + a:not(.page_last), a.page-select + a:not(.page-last)"
+    override fun searchMangaNextPageSelector() = "a.page_select + a:not(.page_last), a.page-select + a:not(.page-last)"
 
     open val mangaDetailsMainSelector = "div.manga-info-top, div.panel-story-info"
 
@@ -237,33 +310,31 @@ abstract class MangaBox(
         }
     }
 
-    override fun mangaDetailsParse(document: Document): SManga {
-        return SManga.create().apply {
-            document.select(mangaDetailsMainSelector).firstOrNull()?.let { infoElement ->
-                title = infoElement.select("h1, h2").first()!!.text()
-                author = infoElement.select("li:contains(author) a, td:containsOwn(author) + td a")
-                    .eachText().joinToString()
-                status = parseStatus(
-                    infoElement.select("li:contains(status), td:containsOwn(status) + td").text(),
-                )
-                genre = infoElement.select("div.manga-info-top li:contains(genres)").firstOrNull()
-                    ?.select("a")?.joinToString { it.text() } // kakalot
-                    ?: infoElement.select("td:containsOwn(genres) + td a")
-                        .joinToString { it.text() } // nelo
-            } ?: checkForRedirectMessage(document)
-            description = document.select(descriptionSelector).firstOrNull()?.ownText()
-                ?.replace("""^$title summary:\s""".toRegex(), "")
-                ?.replace("""<\s*br\s*/?>""".toRegex(), "\n")
-                ?.replace("<[^>]*>".toRegex(), "")
-            thumbnail_url = document.select(thumbnailSelector).attr("abs:src")
+    override fun mangaDetailsParse(document: Document): SManga = SManga.create().apply {
+        document.select(mangaDetailsMainSelector).firstOrNull()?.let { infoElement ->
+            title = infoElement.select("h1, h2").first()!!.text()
+            author = infoElement.select("li:contains(author) a, td:containsOwn(author) + td a")
+                .eachText().joinToString()
+            status = parseStatus(
+                infoElement.select("li:contains(status), td:containsOwn(status) + td").text(),
+            )
+            genre = infoElement.select("div.manga-info-top li:contains(genres)").firstOrNull()
+                ?.select("a")?.joinToString { it.text() } // kakalot
+                ?: infoElement.select("td:containsOwn(genres) + td a")
+                    .joinToString { it.text() } // nelo
+        } ?: checkForRedirectMessage(document)
+        description = document.select(descriptionSelector).firstOrNull()?.ownText()
+            ?.replace("""^$title summary:\s""".toRegex(), "")
+            ?.replace("""<\s*br\s*/?>""".toRegex(), "\n")
+            ?.replace("<[^>]*>".toRegex(), "")
+        thumbnail_url = document.select(thumbnailSelector).attr("abs:src")
 
-            // add alternative name to manga description
-            document.select(altNameSelector).firstOrNull()?.ownText()?.let {
-                if (it.isBlank().not()) {
-                    description = when {
-                        description.isNullOrBlank() -> altName + it
-                        else -> description + "\n\n$altName" + it
-                    }
+        // add alternative name to manga description
+        document.select(altNameSelector).firstOrNull()?.ownText()?.let {
+            if (it.isBlank().not()) {
+                description = when {
+                    description.isNullOrBlank() -> altName + it
+                    else -> description + "\n\n$altName" + it
                 }
             }
         }
@@ -280,21 +351,60 @@ abstract class MangaBox(
     }
 
     override fun chapterListRequest(manga: SManga): Request {
-        if (manga.url.startsWith("http")) {
-            return GET(manga.url, headers)
-        }
-        return super.chapterListRequest(manga)
+        val slug = manga.url.split("/").last()
+        return GET("${apiChapterListUrl.replace("__SLUG__", slug)}?limit=$CHAPTER_LIST_TAKE&offset=0", headers)
     }
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val document = response.asJsoup()
+        val apiResult = response.parseAs<ApiResponse>()
 
-        return document.select(chapterListSelector())
-            .map { chapterFromElement(it) }
-            .also { if (it.isEmpty()) checkForRedirectMessage(document) }
+        val slug = response.request.url
+            .toString()
+            .trimEnd('/')
+            .split('/')
+            .let { it[it.size - 2] }
+
+        val rawChaptersList = mutableListOf<ApiChapter>()
+
+        rawChaptersList.addAll(apiResult.data.chapters)
+
+        // Iterate if chapter contains more than the initial take
+        if (apiResult.data.pagination.has_more) {
+            var offsetMultiple = 1
+            val baseChapterListUrl = apiChapterListUrl.replace("__SLUG__", slug)
+
+            while (true) {
+                val nextPageResponse =
+                    client.newCall(
+                        GET(
+                            "$baseChapterListUrl?limit=$CHAPTER_LIST_TAKE&offset=${CHAPTER_LIST_TAKE * offsetMultiple}",
+                            headers,
+                        ),
+                    )
+                        .execute().parseAs<ApiResponse>()
+
+                rawChaptersList.addAll(nextPageResponse.data.chapters)
+
+                if (nextPageResponse.data.pagination.has_more) {
+                    offsetMultiple += 1
+                } else {
+                    break
+                }
+            }
+        }
+
+        return rawChaptersList.map { apiChapter ->
+            SChapter.create().apply {
+                name = apiChapter.chapter_name
+                url = apiChapterPageUrl.replace("__MANGA__", slug).replace("__CHAPTER__", apiChapter.chapter_slug)
+                chapter_number = apiChapter.chapter_num
+                scanlator = baseUrl.replace("https://", "")
+                date_upload = dateFormat.tryParse(apiChapter.updated_at)
+            }
+        }
     }
 
-    override fun chapterListSelector() = "div.chapter-list div.row, ul.row-content-chapter li"
+    override fun chapterListSelector() = String()
 
     protected open val alternateChapterDateSelector = String()
 
@@ -305,17 +415,15 @@ abstract class MangaBox(
         ).last()!!
     }
 
-    override fun chapterFromElement(element: Element): SChapter {
-        return SChapter.create().apply {
-            element.select("a").let {
-                url = it.attr("abs:href")
-                    .substringAfter(baseUrl) // intentionally not using setUrlWithoutDomain
-                name = it.text()
-                scanlator =
-                    it.attr("abs:href").toHttpUrl().host // show where chapters are actually from
-            }
-            date_upload = dateFormat.tryParse(element.selectDateFromElement().attr("title"))
+    override fun chapterFromElement(element: Element): SChapter = SChapter.create().apply {
+        element.select("a").let {
+            url = it.attr("abs:href")
+                .substringAfter(baseUrl) // intentionally not using setUrlWithoutDomain
+            name = it.text()
+            scanlator =
+                it.attr("abs:href").toHttpUrl().host // show where chapters are actually from
         }
+        date_upload = dateFormat.tryParse(element.selectDateFromElement().attr("title"))
     }
 
     override fun pageListRequest(chapter: SChapter): Request {
@@ -357,31 +465,103 @@ abstract class MangaBox(
         // Add all parsed cdns to set
         cdnSet.addAll(cdns)
 
-        return chapterImages.mapIndexed { i, imagePath ->
-            val parsedUrl = cdns[0].toHttpUrl().run {
-                newBuilder()
-                    .encodedPath(
-                        "/$imagePath".replace(
-                            "//",
-                            "/",
-                        ),
-                    ) // replace ensures that there's at least one trailing slash prefix
-                    .build()
-                    .toString()
+        val (numImages, imageUrls) = if (chapterImages.isNotEmpty()) {
+            val httpUrl = cdns[0].toHttpUrl()
+            Pair(
+                chapterImages.size,
+                chapterImages.asSequence().map { imagePath ->
+                    httpUrl
+                        .newBuilder()
+                        .encodedPath(
+                            "/$imagePath".replace(
+                                "//",
+                                "/",
+                            ),
+                        ) // replace ensures that there's at least one trailing slash prefix
+                        .build()
+                        .toString()
+                },
+            )
+        } else {
+            val elements = document.select("div.container-chapter-reader > img")
+            Pair(
+                elements.size,
+                document.select("div.container-chapter-reader > img").asSequence().map { img ->
+                    img.absUrl("src")
+                },
+            )
+        }
+
+        return if (mergeImages == true) {
+            val latch = CountDownLatch(numImages)
+            val sizes = MutableList<ImageSize?>(numImages) { null }
+            val headers = headersBuilder().set("Range", WebpSizeGetter.RANGE).build()
+
+            imageUrls.forEachIndexed { i, url ->
+                client.newCall(
+                    GET(url, headers).newBuilder()
+                        .tag(MangaBoxFallBackTag::class.java, MangaBoxFallBackTag()).build(),
+                ).enqueue(
+                    object : Callback {
+                        override fun onFailure(call: Call, e: IOException) {
+                            latch.countDown()
+                        }
+
+                        override fun onResponse(call: Call, response: Response) {
+                            sizes[i] = WebpSizeGetter(response.body.byteStream()).get()
+                            latch.countDown()
+                        }
+                    },
+                )
             }
 
-            Page(i, document.location(), parsedUrl)
-        }.ifEmpty {
-            document.select("div.container-chapter-reader > img").mapIndexed { i, img ->
-                Page(i, imageUrl = img.absUrl("src"))
+            latch.await()
+
+            val imageList = mutableListOf<MergeImage>()
+
+            for ((url, size) in imageUrls.zip(sizes.asSequence())) {
+                val prev = imageList.lastOrNull()
+                val prevSize = prev?.size
+                if (
+                    // size is known
+                    size != null &&
+
+                    // previous size is known
+                    prevSize != null &&
+
+                    // widths are equal
+                    size.w == prevSize.w &&
+
+                    // merged image is not too long
+                    3 * prevSize.w > 2 * prevSize.h + size.h
+                ) {
+                    prev.urls.add(url)
+                    prevSize.h += size.h
+                } else {
+                    imageList.add(MergeImage(mutableListOf(url), size))
+                }
             }
+
+            imageList.mapIndexed { i, image ->
+                Page(
+                    i,
+                    document.location(),
+                    image.toString(),
+                )
+            }
+        } else {
+            imageUrls.mapIndexed { i, url ->
+                Page(
+                    i,
+                    document.location(),
+                    url,
+                )
+            }.toList()
         }
     }
 
-    override fun imageRequest(page: Page): Request {
-        return GET(page.imageUrl!!, headers).newBuilder()
-            .tag(MangaBoxFallBackTag::class.java, MangaBoxFallBackTag()).build()
-    }
+    override fun imageRequest(page: Page): Request = GET(page.imageUrl!!, headers).newBuilder()
+        .tag(MangaBoxFallBackTag::class.java, MangaBoxFallBackTag()).build()
 
     override fun imageUrlParse(document: Document): String = throw UnsupportedOperationException()
 
@@ -474,8 +654,10 @@ abstract class MangaBox(
         Pair("yuri", "Yuri"),
     )
 
-    open class UriPartFilter(displayName: String, private val vals: Array<Pair<String?, String>>) :
-        Filter.Select<String>(displayName, vals.map { it.second }.toTypedArray()) {
+    open class UriPartFilter(
+        displayName: String,
+        private val vals: Array<Pair<String?, String>>,
+    ) : Filter.Select<String>(displayName, vals.map { it.second }.toTypedArray()) {
         fun toUriPart() = vals[state].first
     }
 
@@ -494,10 +676,56 @@ abstract class MangaBox(
                 true
             }
         }.let(screen::addPreference)
+
+        CheckBoxPreference(screen.context).apply {
+            key = PREF_MERGE_IMAGES
+            title = "Merge Split Images"
+            summary = "Images are sometimes split vertically. " +
+                "This setting enables detecting and merging split images. " +
+                "Note that this isn't 100% accurate."
+            setDefaultValue(false)
+
+            setOnPreferenceChangeListener { _, newValue ->
+                // Update values
+                mergeImages = newValue as Boolean
+                true
+            }
+        }.let(screen::addPreference)
     }
 
     companion object {
         private const val PREF_USE_MIRROR = "pref_use_mirror"
+        private const val PREF_MERGE_IMAGES = "pref_merge_images"
+        private const val CHAPTER_LIST_TAKE = 1000
         private const val URL_PREFIX = "https://"
+    }
+}
+
+private class MergeImage(
+    val urls: MutableList<String>,
+    val size: ImageSize?,
+) {
+    override fun toString(): String {
+        if (urls.size == 1) {
+            return urls[0]
+        }
+
+        val (w, h) = size!!
+
+        val builder = HTTP_URL
+            .newBuilder()
+            .addQueryParameter("w", w.toString())
+            .addQueryParameter("h", h.toString())
+            .addQueryParameter("length", urls.size.toString())
+
+        urls.forEachIndexed { i, url ->
+            builder.addQueryParameter(i.toString(), url)
+        }
+
+        return builder.build().toString()
+    }
+
+    companion object {
+        private val HTTP_URL = "https://127.0.0.1/merge".toHttpUrl()
     }
 }

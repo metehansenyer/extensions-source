@@ -50,7 +50,7 @@ abstract class NatsuId(
 
     protected open fun OkHttpClient.Builder.customizeClient(): OkHttpClient.Builder = this
 
-    final override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+    final override val client: OkHttpClient = network.client.newBuilder()
         .customizeClient()
         // fix disk cache
         .apply {
@@ -62,24 +62,18 @@ abstract class NatsuId(
     override fun headersBuilder() = super.headersBuilder()
         .set("Referer", "$baseUrl/")
 
-    override fun popularMangaRequest(page: Int) =
-        searchMangaRequest(page, "", SortFilter.popular)
+    override fun popularMangaRequest(page: Int) = searchMangaRequest(page, "", SortFilter.popular)
 
-    override fun popularMangaParse(response: Response) =
-        searchMangaParse(response)
+    override fun popularMangaParse(response: Response) = searchMangaParse(response)
 
-    override fun latestUpdatesRequest(page: Int) =
-        searchMangaRequest(page, "", SortFilter.latest)
+    override fun latestUpdatesRequest(page: Int) = searchMangaRequest(page, "", SortFilter.latest)
 
-    override fun latestUpdatesParse(response: Response) =
-        searchMangaParse(response)
+    override fun latestUpdatesParse(response: Response) = searchMangaParse(response)
 
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
-        return if (query.startsWith("https://")) {
-            deepLink(query)
-        } else {
-            super.fetchSearchManga(page, query, filters)
-        }
+    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> = if (query.startsWith("https://")) {
+        deepLink(query)
+    } else {
+        super.fetchSearchManga(page, query, filters)
     }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
@@ -106,6 +100,9 @@ abstract class NatsuId(
             addFormDataPart("project", "0")
             filters.firstInstanceOrNull<TypeFilter>()?.checked.orEmpty().also {
                 addFormDataPart("type", it.toJsonString())
+            }
+            filters.firstInstanceOrNull<StatusFilter>()?.checked.orEmpty().also {
+                addFormDataPart("status", it.toJsonString())
             }
             val sort = filters.firstInstance<SortFilter>()
             addFormDataPart("order", if (sort.isAscending) "asc" else "desc")
@@ -203,7 +200,7 @@ abstract class NatsuId(
                     data.map { it.name to it.slug },
                 ),
                 GenreInclusion(),
-                GenreInclusion(),
+                GenreExclusion(),
             ),
         )
 
@@ -272,19 +269,17 @@ abstract class NatsuId(
     }
 
     private val descriptionIdRegex = Regex("""ID: (\d+)""")
-    private fun getMangaId(manga: SManga): String {
-        return if (manga.url.startsWith("{")) {
-            manga.url.parseAs<MangaUrl>().id.toString()
-        } else if (descriptionIdRegex.containsMatchIn(manga.description?.trim().orEmpty())) {
-            descriptionIdRegex.find(manga.description!!.trim())!!.groupValues[1]
-        } else {
-            val document = client.newCall(
-                GET(getMangaUrl(manga), headers),
-            ).execute().asJsoup()
+    private fun getMangaId(manga: SManga): String = if (manga.url.startsWith("{")) {
+        manga.url.parseAs<MangaUrl>().id.toString()
+    } else if (descriptionIdRegex.containsMatchIn(manga.description?.trim().orEmpty())) {
+        descriptionIdRegex.find(manga.description!!.trim())!!.groupValues[1]
+    } else {
+        val document = client.newCall(
+            GET(getMangaUrl(manga), headers),
+        ).execute().asJsoup()
 
-            document.selectFirst("#gallery-list")!!.attr("hx-get")
-                .substringAfter("manga_id=").substringBefore("&")
-        }
+        document.selectFirst("#gallery-list")!!.attr("hx-get")
+            .substringAfter("manga_id=").substringBefore("&")
     }
 
     override fun mangaDetailsRequest(manga: SManga): Request {
@@ -352,9 +347,7 @@ abstract class NatsuId(
         }
     }
 
-    override fun imageUrlParse(response: Response): String {
-        throw UnsupportedOperationException()
-    }
+    override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException()
 
     protected open fun transformJsonResponse(responseBody: String): String = responseBody
 }

@@ -1,8 +1,8 @@
 ext {
     extName = 'Uzay Manga'
     extClass = '.UzayManga'
-    extVersionCode = 7
-    isNsfw = false
+    themePkg = 'uzaymanga'
+    overrideVersionCode = 42
 }
 
-apply from: "$rootDir/common.gradle"
+apply plugin: "kei.plugins.extension.legacy"
