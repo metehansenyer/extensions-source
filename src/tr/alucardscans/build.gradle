@@ -1,9 +1,0 @@
-ext {
-    extName = 'Alucard Scans'
-    extClass = '.Alucardscans'
-    baseUrl = 'https://alucardscans.com'
-    extVersionCode = 1
-    isNsfw = false
-}
-
-apply plugin: "kei.plugins.extension.legacy"
