@@ -3,7 +3,7 @@ ext {
     extClass = '.TitanManga'
     themePkg = 'madara'
     baseUrl = 'https://titanmanga.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

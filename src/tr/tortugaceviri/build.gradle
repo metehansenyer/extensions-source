@@ -3,7 +3,7 @@ ext {
     extClass = '.TortugaCeviri'
     themePkg = 'madara'
     baseUrl = 'https://tortugaceviri.com'
-    overrideVersionCode = 2
+    overrideVersionCode = 1
     isNsfw = false
 }
 

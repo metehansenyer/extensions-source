@@ -3,7 +3,7 @@ ext {
     extClass = '.ArmoniScans'
     themePkg = 'madara'
     baseUrl = 'https://armoniscans.net'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

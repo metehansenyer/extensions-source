@@ -3,7 +3,7 @@ ext {
     extClass = '.RuyaMangaNet'
     themePkg = 'madara'
     baseUrl = 'https://ruyamanga.net'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

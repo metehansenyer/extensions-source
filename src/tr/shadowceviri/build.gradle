@@ -3,7 +3,7 @@ ext {
     extClass = '.ShadowCeviri'
     themePkg = 'zeistmanga'
     baseUrl = 'https://shadowceviri.blogspot.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

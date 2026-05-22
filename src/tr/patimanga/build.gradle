@@ -3,7 +3,7 @@ ext {
     extClass = '.PatiManga'
     themePkg = 'mangathemesia'
     baseUrl = 'https://www.patimanga.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

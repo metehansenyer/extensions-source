@@ -3,7 +3,7 @@ ext {
     extClass = '.TimeNaight'
     themePkg = 'madara'
     baseUrl = 'https://timenaight.org'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = true
 }
 

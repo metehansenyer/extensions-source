@@ -3,7 +3,7 @@ ext {
     extClass = '.MangaGezgini'
     themePkg = 'madara'
     baseUrl = 'https://mangagezgini.online'
-    overrideVersionCode = 9
+    overrideVersionCode = 1
     isNsfw = false
 }
 

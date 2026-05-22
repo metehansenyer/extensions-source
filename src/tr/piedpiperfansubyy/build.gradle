@@ -3,7 +3,7 @@ ext {
     extClass = '.PiedPiperFansubyy'
     themePkg = 'madara'
     baseUrl = 'https://piedpiperfansubyy.me'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = true
 }
 

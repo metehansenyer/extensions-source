@@ -3,7 +3,7 @@ ext {
     extClass = '.RagnarScans'
     themePkg = 'initmanga'
     baseUrl = 'https://ragnarscans.com'
-    overrideVersionCode = 45
+    overrideVersionCode = 1
     isNsfw = false
 }
 

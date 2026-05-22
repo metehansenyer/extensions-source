@@ -3,7 +3,7 @@ ext {
     extClass = '.Ayatoon'
     themePkg = 'mangathemesia'
     baseUrl = 'https://ayatoon.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

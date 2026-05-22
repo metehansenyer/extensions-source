@@ -3,7 +3,7 @@ ext {
     extClass = '.PijamaliKoi'
     themePkg = 'mangathemesia'
     baseUrl = 'https://pijamalikoi.com/m'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

@@ -3,7 +3,7 @@ ext {
     extClass = '.MangaTilkisi'
     themePkg = 'madara'
     baseUrl = 'https://www.tilkiscans.com'
-    overrideVersionCode = 2
+    overrideVersionCode = 1
     isNsfw = false
 }
 

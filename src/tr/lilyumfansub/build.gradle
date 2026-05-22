@@ -3,7 +3,7 @@ ext {
     extClass = '.LilyumFansub'
     themePkg = 'madara'
     baseUrl = 'https://lilyumfansub.com.tr'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

@@ -3,7 +3,7 @@ ext {
     extClass = '.GolgeBahcesi'
     themePkg = 'mangathemesia'
     baseUrl = 'https://golgebahcesi.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

@@ -3,7 +3,7 @@ ext {
     extClass = '.SereinScan'
     themePkg = 'mangathemesia'
     baseUrl = 'https://sereinscan.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 

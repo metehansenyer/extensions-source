@@ -3,7 +3,7 @@ ext {
     extClass = '.ZenithScans'
     themePkg = 'mangathemesia'
     baseUrl = 'https://zenithscans.com'
-    overrideVersionCode = 0
+    overrideVersionCode = 1
     isNsfw = false
 }
 
