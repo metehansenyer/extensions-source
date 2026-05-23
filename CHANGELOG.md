@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-05-23
+
+### Changed
+- Project base updated from [Commit c1ab5ad](https://github.com/keiyoushi/extensions-source/commit/c1ab5ad10b21980c6b02e171ff83e9bcf3e14055) to [Commit bc30019](https://github.com/keiyoushi/extensions-source/commit/bc300198a7746b21bcf43040da41cfcd7421e1c1).
+
+---
+
 ## [0.1.4] - 2025-12-03
 
 ### Changed
